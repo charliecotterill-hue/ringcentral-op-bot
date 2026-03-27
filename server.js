@@ -4,6 +4,7 @@ app.use(express.json());
  
 const PORT = process.env.PORT || 3000;
 const INCOMING_WEBHOOK_URL = process.env.INCOMING_WEBHOOK_URL;
+const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
  
 app.get('/', (req, res) => res.send('Bot is running'));
  
@@ -16,10 +17,23 @@ app.post('/webhook', async (req, res) => {
   }
  
   const event = req.body;
-  console.log('Event received:', JSON.stringify(event));
  
   if (event && event.body && event.body.text !== undefined) {
     const text = event.body.text;
+    const creatorId = event.body.creatorId;
+ 
+    // Ignore messages sent by the bot itself to prevent loops
+    if (BOT_OWNER_ID && creatorId === BOT_OWNER_ID) {
+      console.log('Ignoring bot own message');
+      return res.status(200).send();
+    }
+ 
+    // Also ignore messages that start with Echo: as a safety net
+    if (text && text.trim().startsWith('Echo:')) {
+      console.log('Ignoring echo message');
+      return res.status(200).send();
+    }
+ 
     if (text && text.trim()) {
       console.log(`Message received: "${text.trim()}"`);
       await sendMessage(`Echo: ${text.trim()}`);
