@@ -1,15 +1,15 @@
 const express = require('express');
 const app = express();
 app.use(express.json());
-
+ 
 const PORT = process.env.PORT || 3000;
 const RC_CLIENT_ID = process.env.RC_CLIENT_ID;
 const RC_CLIENT_SECRET = process.env.RC_CLIENT_SECRET;
 const RC_SERVER = 'https://platform.ringcentral.com';
 let botToken = process.env.RC_BOT_TOKEN;
-
+ 
 app.get('/', (req, res) => res.send('Bot is running'));
-
+ 
 app.get('/oauth', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send('No code provided');
@@ -37,7 +37,7 @@ app.get('/oauth', async (req, res) => {
     res.status(500).send('OAuth error');
   }
 });
-
+ 
 app.post('/webhook', async (req, res) => {
   const validationToken = req.headers['validation-token'];
   if (validationToken) {
@@ -56,7 +56,7 @@ app.post('/webhook', async (req, res) => {
   }
   res.status(200).send();
 });
-
+ 
 async function sendMessage(chatId, text) {
   if (!botToken) { console.error('No bot token'); return; }
   const response = await fetch(
@@ -73,5 +73,5 @@ async function sendMessage(chatId, text) {
   if (!response.ok) console.error('Send failed:', await response.text());
   else console.log('Message sent!');
 }
-
-app.listen(PORT, () => console.log(`Bot running on port ${
+ 
+app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
