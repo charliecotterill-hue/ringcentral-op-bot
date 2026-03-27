@@ -4,7 +4,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
-const WEBHOOK_URL = 'https://ringcentral-op-bot.onrender.com/webhook';
 
 app.get('/', (req, res) => {
   res.send('Bot is running');
@@ -48,42 +47,6 @@ async function sendMessage(chatId, text) {
   }
 }
 
-async function registerWebhook() {
-  if (!RC_BOT_TOKEN) {
-    console.error('RC_BOT_TOKEN not set');
-    return;
-  }
-  try {
-    const response = await fetch(
-      'https://platform.ringcentral.com/restapi/v1.0/subscription',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${RC_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventFilters: ['/restapi/v1.0/glip/posts'],
-          deliveryMode: {
-            transportType: 'WebHook',
-            address: WEBHOOK_URL,
-          },
-          expiresIn: 604800,
-        }),
-      }
-    );
-    const data = await response.json();
-    if (response.ok) {
-      console.log('Webhook registered! ID:', data.id);
-    } else {
-      console.error('Webhook registration failed:', JSON.stringify(data));
-    }
-  } catch (err) {
-    console.error('Error registering webhook:', err.message);
-  }
-}
-
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`Bot running on port ${PORT}`);
-  await registerWebhook();
 });
