@@ -26,7 +26,7 @@ app.get('/oauth', async (req, res) => {
     const data = await response.json();
     if (data.access_token) {
       botToken = data.access_token;
-      console.log('Bot authenticated successfully! Token obtained.');
+      console.log('Bot authenticated successfully!');
       res.send('Bot installed successfully! You can close this window.');
     } else {
       console.error('OAuth failed:', JSON.stringify(data));
@@ -49,4 +49,29 @@ app.post('/webhook', async (req, res) => {
   console.log('Event received:', JSON.stringify(event));
   if (event && event.body && event.body.text !== undefined) {
     const text = event.body.text;
-    const chat
+    const chatId = event.body.groupId;
+    if (chatId && text && text.trim()) {
+      await sendMessage(chatId, `Echo: ${text.trim()}`);
+    }
+  }
+  res.status(200).send();
+});
+
+async function sendMessage(chatId, text) {
+  if (!botToken) { console.error('No bot token'); return; }
+  const response = await fetch(
+    `${RC_SERVER}/restapi/v1.0/glip/chats/${chatId}/posts`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+    }
+  );
+  if (!response.ok) console.error('Send failed:', await response.text());
+  else console.log('Message sent!');
+}
+
+app.listen(PORT, () => console.log(`Bot running on port ${
