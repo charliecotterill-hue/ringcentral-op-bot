@@ -6,9 +6,13 @@ const PORT = process.env.PORT || 3000;
 const RC_CLIENT_ID = process.env.RC_CLIENT_ID;
 const RC_CLIENT_SECRET = process.env.RC_CLIENT_SECRET;
 const RC_SERVER = 'https://platform.ringcentral.com';
-let botToken = null;
+let botToken = process.env.RC_BOT_TOKEN;
 
-async function getBotToken() {
+app.get('/', (req, res) => res.send('Bot is running'));
+
+app.get('/oauth', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).send('No code provided');
   try {
     const credentials = Buffer.from(`${RC_CLIENT_ID}:${RC_CLIENT_SECRET}`).toString('base64');
     const response = await fetch(`${RC_SERVER}/restapi/oauth/token`, {
@@ -17,24 +21,22 @@ async function getBotToken() {
         'Authorization': `Basic ${credentials}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: 'grant_type=client_credentials',
+      body: `grant_type=authorization_code&code=${code}&redirect_uri=https://ringcentral-op-bot.onrender.com/oauth`,
     });
     const data = await response.json();
     if (data.access_token) {
       botToken = data.access_token;
-      console.log('Bot token obtained successfully');
-      setTimeout(getBotToken, (data.expires_in - 60) * 1000);
+      console.log('Bot authenticated successfully! Token obtained.');
+      res.send('Bot installed successfully! You can close this window.');
     } else {
-      console.error('Token error:', JSON.stringify(data));
-      setTimeout(getBotToken, 60000);
+      console.error('OAuth failed:', JSON.stringify(data));
+      res.status(400).send('OAuth failed: ' + JSON.stringify(data));
     }
   } catch (err) {
-    console.error('Token fetch error:', err.message);
-    setTimeout(getBotToken, 60000);
+    console.error('OAuth error:', err.message);
+    res.status(500).send('OAuth error');
   }
-}
-
-app.get('/', (req, res) => res.send('Bot is running'));
+});
 
 app.post('/webhook', async (req, res) => {
   const validationToken = req.headers['validation-token'];
@@ -47,32 +49,4 @@ app.post('/webhook', async (req, res) => {
   console.log('Event received:', JSON.stringify(event));
   if (event && event.body && event.body.text !== undefined) {
     const text = event.body.text;
-    const chatId = event.body.groupId;
-    if (chatId && text && text.trim()) {
-      await sendMessage(chatId, `Echo: ${text.trim()}`);
-    }
-  }
-  res.status(200).send();
-});
-
-async function sendMessage(chatId, text) {
-  if (!botToken) { console.error('No token yet'); return; }
-  const response = await fetch(
-    `${RC_SERVER}/restapi/v1.0/glip/chats/${chatId}/posts`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ text }),
-    }
-  );
-  if (!response.ok) console.error('Send failed:', await response.text());
-  else console.log('Message sent!');
-}
-
-app.listen(PORT, async () => {
-  console.log(`Bot running on port ${PORT}`);
-  await getBotToken();
-});
+    const chat
