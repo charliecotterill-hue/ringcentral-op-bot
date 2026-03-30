@@ -66,7 +66,7 @@ async function getChannelName(groupId) {
   return groupId;
 }
  
-// Log on site check-in to Google Sheets
+// Log check-in to Google Sheets
 async function logOnSite(name, site, time, date) {
   if (!googleAuth || !SHEET_ID) {
     console.error('Google Sheets not configured');
@@ -96,7 +96,7 @@ async function logOnSite(name, site, time, date) {
       valueInputOption: 'RAW',
       resource: { values: [[date, time, name, site]] },
     });
-    console.log(`Logged: ${name} on site at ${site} (${time})`);
+    console.log(`Logged: ${name} at ${site} (${time})`);
   } catch (err) {
     console.error('Failed to log to Google Sheets:', err.message);
   }
@@ -124,6 +124,11 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).send();
     }
  
+    // Ignore messages from incoming webhooks (they start with a checkmark)
+    if (text && text.trim().startsWith('✅')) {
+      return res.status(200).send();
+    }
+ 
     if (text && text.trim()) {
       const cleanText = text.trim();
  
@@ -141,8 +146,8 @@ app.post('/webhook', async (req, res) => {
         // Log to Google Sheets
         await logOnSite(name, site, time, date);
  
-        // Send confirmation in channel
-        await sendMessage(`✅ ${name} checked in on site at ${time}`);
+        // Send confirmation — no trigger words to avoid loops
+        await sendMessage(`✅ Check-in recorded for ${name} at ${time}`);
       }
     }
   }
@@ -166,4 +171,3 @@ async function sendMessage(text) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
