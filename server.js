@@ -7,6 +7,7 @@ const PORT = process.env.PORT || 3000;
 const INCOMING_WEBHOOK_URL = process.env.INCOMING_WEBHOOK_URL;
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
 const SHEET_ID = process.env.SHEET_ID;
+const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
  
 // Set up Google Sheets authentication
@@ -21,6 +22,9 @@ try {
 } catch (err) {
   console.error('Failed to configure Google auth:', err.message);
 }
+ 
+// In-memory store for pending site confirmations
+const pendingConfirmations = {};
  
 // Detect on site messages
 function isOnSiteMessage(text) {
@@ -52,7 +56,7 @@ async function getUserName(personId) {
     );
     if (response.ok) {
       const data = await response.json();
-      return `${data.firstName || ''} ${data.lastName || ''}`.trim() || personId;
+      return `${data.firstName || ''}`.trim() || personId;
     }
   } catch (err) {
     console.error('Failed to get user name:', err.message);
@@ -60,8 +64,46 @@ async function getUserName(personId) {
   return personId;
 }
  
-// Log on site check-in to Google Sheets
-async function logOnSite(name, time, date) {
+// Look up scanner's assignments for today from the Scanning Dashboard
+async function getScannersAssignments(firstName) {
+  if (!googleAuth || !TRACKER_SHEET_ID) return [];
+  try {
+    const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+ 
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: TRACKER_SHEET_ID,
+      range: 'Scanning Dashboard!C5:H1000',
+    });
+ 
+    const rows = result.data.values || [];
+    const assignments = [];
+ 
+    for (const row of rows) {
+      const day      = row[1]; // D
+      const client   = row[2]; // E
+      const site     = row[3]; // F
+      const employee = row[4]; // G
+      const batch    = row[5]; // H
+ 
+      if (
+        day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
+        employee && employee.toLowerCase().trim() === firstName.toLowerCase().trim()
+      ) {
+        assignments.push({ client, site, batch });
+      }
+    }
+ 
+    console.log(`Found ${assignments.length} assignment(s) for ${firstName} on ${dayOfWeek}`);
+    return assignments;
+  } catch (err) {
+    console.error('Failed to look up assignments:', err.message);
+    return [];
+  }
+}
+ 
+// Log on site check-in to the On Site Google Sheet
+async function logOnSite(name, site, batch, time, date) {
   if (!googleAuth || !SHEET_ID) {
     console.error('Google Sheets not configured');
     return;
@@ -83,21 +125,20 @@ async function logOnSite(name, time, date) {
       console.log('New day detected — cleared previous entries');
     }
  
-    // Append the new check-in row
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A:D',
+      range: 'Sheet1!A:E',
       valueInputOption: 'RAW',
-      resource: { values: [[date, time, name, '']] },
+      resource: { values: [[date, time, name, site || '', batch || '', '']] },
     });
-    console.log(`Logged on site: ${name} at ${time}`);
+    console.log(`Logged on site: ${name} at ${site} (${batch}) — ${time}`);
   } catch (err) {
     console.error('Failed to log to Google Sheets:', err.message);
   }
 }
  
 // Log off site time in the same row as the on site entry
-async function logOffSite(name, time, date) {
+async function logOffSite(name, site, time, date) {
   if (!googleAuth || !SHEET_ID) {
     console.error('Google Sheets not configured');
     return;
@@ -105,39 +146,37 @@ async function logOffSite(name, time, date) {
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
  
-    // Get all rows to find the matching on site entry
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A2:D1000',
+      range: 'Sheet1!A2:F1000',
     });
  
     const rows = result.data.values || [];
     let matchRowIndex = -1;
  
-    // Find the row for this person today (match on date and name, no time out yet)
     for (let i = 0; i < rows.length; i++) {
-      const [rowDate, , rowName, rowTimeOut] = rows[i];
-      if (rowDate === date && rowName === name && !rowTimeOut) {
-        matchRowIndex = i + 2; // +2 because sheet rows start at 1 and we skip header
+      const [rowDate, , rowName, rowSite, , rowTimeOut] = rows[i];
+      const siteMatch = site ? rowSite === site : true;
+      if (rowDate === date && rowName === name && siteMatch && !rowTimeOut) {
+        matchRowIndex = i + 2;
         break;
       }
     }
  
     if (matchRowIndex === -1) {
-      console.log(`No matching on site entry found for ${name} today`);
+      console.log(`No matching on site entry for ${name} today`);
       return;
     }
  
-    // Update column D (Time Out) in the matching row
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `Sheet1!D${matchRowIndex}`,
+      range: `Sheet1!F${matchRowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[time]] },
     });
-    console.log(`Logged off site: ${name} at ${time} (row ${matchRowIndex})`);
+    console.log(`Logged off site: ${name} at ${time}`);
   } catch (err) {
-    console.error('Failed to log off site to Google Sheets:', err.message);
+    console.error('Failed to log off site:', err.message);
   }
 }
  
@@ -157,7 +196,7 @@ app.post('/webhook', async (req, res) => {
     const text = event.body.text;
     const creatorId = event.body.creatorId;
  
-    // Ignore the bot's own messages
+    // Ignore bot's own messages
     if (BOT_OWNER_ID && creatorId === BOT_OWNER_ID) {
       return res.status(200).send();
     }
@@ -173,15 +212,64 @@ app.post('/webhook', async (req, res) => {
       const date = now.toLocaleDateString('en-GB');
       const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
  
+      // --- Handle pending site confirmation (scanner replied with a number) ---
+      if (pendingConfirmations[creatorId]) {
+        const pending = pendingConfirmations[creatorId];
+        const choice = parseInt(cleanText);
+ 
+        if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
+          const selected = pending.assignments[choice - 1];
+          delete pendingConfirmations[creatorId];
+ 
+          if (pending.type === 'onsite') {
+            await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site} (${selected.batch}) at ${pending.time}`);
+          } else {
+            await logOffSite(pending.name, selected.site, pending.time, pending.date);
+            await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`);
+          }
+        } else {
+          await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`);
+        }
+ 
+        return res.status(200).send();
+      }
+ 
+      // --- Handle on site messages ---
       if (isOnSiteMessage(cleanText)) {
         const name = await getUserName(creatorId);
-        await logOnSite(name, time, date);
-        await sendMessage(`✅ Check-in recorded for ${name} at ${time}`);
+        const assignments = await getScannersAssignments(name);
  
+        if (assignments.length === 0) {
+          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
+        } else if (assignments.length === 1) {
+          const { site, batch } = assignments[0];
+          await logOnSite(name, site, batch, time, date);
+          await sendMessage(`✅ Check-in recorded for ${name} at ${site} (${batch}) at ${time}`);
+        } else {
+          // Multiple sites — ask which one
+          pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date };
+          const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
+          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`);
+        }
+ 
+      // --- Handle off site messages ---
       } else if (isOffSiteMessage(cleanText)) {
         const name = await getUserName(creatorId);
-        await logOffSite(name, time, date);
-        await sendMessage(`✅ Check-out recorded for ${name} at ${time}`);
+        const assignments = await getScannersAssignments(name);
+ 
+        if (assignments.length === 0) {
+          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
+        } else if (assignments.length === 1) {
+          const { site } = assignments[0];
+          await logOffSite(name, site, time, date);
+          await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`);
+        } else {
+          // Multiple sites — ask which one they're leaving
+          pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date };
+          const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
+          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`);
+        }
       }
     }
   }
