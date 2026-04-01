@@ -196,13 +196,18 @@ app.post('/webhook', async (req, res) => {
     const text = event.body.text;
     const creatorId = event.body.creatorId;
  
+    // Ignore messages with no sender (e.g. incoming webhook posts from the bot itself)
+    if (!creatorId) {
+      return res.status(200).send();
+    }
+ 
     // Ignore bot's own messages
     if (BOT_OWNER_ID && creatorId === BOT_OWNER_ID) {
       return res.status(200).send();
     }
  
-    // Ignore bot confirmation messages
-    if (text && text.trim().startsWith('✅')) {
+    // Ignore bot confirmation/question messages
+    if (text && (text.trim().startsWith('✅') || text.trim().startsWith('⚠️') || text.trim().startsWith('Hi ') || text.trim().startsWith('Please reply'))) {
       return res.status(200).send();
     }
  
