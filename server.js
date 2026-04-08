@@ -145,9 +145,9 @@ async function logArchiveCheckIn(name, site, time, date) {
     });
     const dateCol = existing.data.values || [];
  
-    // Find the last non-empty date entry
+    // Find the last non-empty date entry, skipping row 1 (header)
     let lastDate = null;
-    for (let i = dateCol.length - 1; i >= 0; i--) {
+    for (let i = dateCol.length - 1; i >= 1; i--) {
       if (dateCol[i] && dateCol[i][0] && dateCol[i][0].trim()) {
         lastDate = dateCol[i][0].trim();
         break;
