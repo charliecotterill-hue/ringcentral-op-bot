@@ -68,7 +68,7 @@ async function getUserName(personId) {
 async function getScannersAssignments(firstName) {
   if (!googleAuth || !TRACKER_SHEET_ID) return [];
   try {
-    const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
+    const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' });
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
  
     const result = await sheets.spreadsheets.values.get({
@@ -92,7 +92,7 @@ async function getScannersAssignments(firstName) {
         employee && employee.toLowerCase().trim() === firstName.toLowerCase().trim()
       ) {
         // Row 5 is the first data row (index 0 → sheet row 5)
-        assignments.push({ client, site, batch, rowNumber: i + 5 });
+        assignments.push({ client: client || '', site: site || '', batch: batch || '', rowNumber: i + 5 });
       }
     }
  
@@ -346,8 +346,8 @@ app.post('/webhook', async (req, res) => {
     if (text && text.trim()) {
       const cleanText = text.trim();
       const now = new Date();
-      const date = now.toLocaleDateString('en-GB');
-      const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const date = now.toLocaleDateString('en-GB', { timeZone: 'Europe/London' });
+      const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
  
       // --- Handle pending site confirmation (scanner replied with a number) ---
       if (pendingConfirmations[creatorId]) {
