@@ -85,7 +85,7 @@ async function getScannersAssignments(firstName) {
       const client   = row[2]; // E
       const site     = row[3]; // F
       const employee = row[4]; // G
-      const batch    = row[12]; // H
+      const batch    = row[5]; // H
  
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
@@ -362,7 +362,7 @@ app.post('/webhook', async (req, res) => {
             await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
             await logArchiveCheckIn(pending.name, selected.site, pending.time, pending.date);
             await tickCheckbox(selected.rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site} (${selected.batch}) at ${pending.time}`);
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.time}`);
           } else {
             await logOffSite(pending.name, selected.site, pending.time, pending.date);
             await logArchiveCheckOut(pending.name, selected.site, pending.time, pending.date);
@@ -388,7 +388,7 @@ app.post('/webhook', async (req, res) => {
           await logOnSite(name, site, batch, time, date);
           await logArchiveCheckIn(name, site, time, date);
           await tickCheckbox(rowNumber, 'L');
-          await sendMessage(`✅ Check-in recorded for ${name} at ${site} (${batch}) at ${time}`);
+          await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`);
         } else {
           // Multiple sites — ask which one
           pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date };
