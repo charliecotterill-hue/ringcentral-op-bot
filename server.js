@@ -85,7 +85,7 @@ async function getScannersAssignments(firstName) {
       const client   = row[2]; // E
       const site     = row[3]; // F
       const employee = row[4]; // G
-      const batch    = row[5]; // H
+      const batch    = row[12]; // H
  
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
@@ -138,37 +138,47 @@ async function logArchiveCheckIn(name, site, time, date) {
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
  
-    // Read existing archive data to check the last recorded date
+    // Read existing archive data (A:F — column F stores the actual sheet row number as a helper)
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Archive!A:A',
+      range: 'Archive!A:M',
     });
-    const dateCol = existing.data.values || [];
+    const rows = existing.data.values || [];
  
-    // Find the last non-empty date entry, skipping row 1 (header)
+    // Find the last data row by scanning backwards, skipping header (index 0)
     let lastDate = null;
-    for (let i = dateCol.length - 1; i >= 1; i--) {
-      if (dateCol[i] && dateCol[i][0] && dateCol[i][0].trim()) {
-        lastDate = dateCol[i][0].trim();
+    let lastSheetRow = 1; // default to header row (sheet row 1)
+ 
+    for (let i = rows.length - 1; i >= 1; i--) {
+      const row = rows[i];
+      // Look for a row with an operative name in column C (index 2)
+      if (row && row[2] && String(row[2]).trim()) {
+        if (row[0]) lastDate = String(row[0]).trim();
+        // Column F (index 5) holds the actual sheet row number written at check-in time
+        if (row[12] && !isNaN(parseInt(row[12]))) {
+          lastSheetRow = parseInt(row[12]);
+        } else {
+          lastSheetRow = i + 1; // fallback if column F is missing
+        }
         break;
       }
     }
  
-    // If there's existing data from a different day, prepend two blank rows as a visual gap
-    const rowsToAppend = [];
+    // Calculate the exact row to write to
+    let nextRow = lastSheetRow + 1;
     if (lastDate && lastDate !== date) {
-      rowsToAppend.push(['', '', '', '', '']);
-      rowsToAppend.push(['', '', '', '', '']);
+      nextRow += 2; // two-row visual gap between days
     }
-    rowsToAppend.push([date, '', name, `${site} (${time} - )`, '']);
  
-    await sheets.spreadsheets.values.append({
+    // Write directly to a specific row — no append, no surprises
+    // Column F stores nextRow as a hidden helper so checkout can always find this row
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: 'Archive!A:E',
+      range: `Archive!A${nextRow}:M${nextRow}`,
       valueInputOption: 'RAW',
-      resource: { values: rowsToAppend },
+      resource: { values: [[date, '', name, `${site} (${time} - )`, '', '', '', '', '', '', '', '', nextRow]] },
     });
-    console.log(`Archive check-in logged: ${name} at ${site} ${time}`);
+    console.log(`Archive check-in logged at row ${nextRow}: ${name} at ${site} ${time}`);
   } catch (err) {
     console.error('Failed to log archive check-in:', err.message);
   }
@@ -181,22 +191,25 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Archive!A:E',
+      range: 'Archive!A:M',
     });
     const rows = result.data.values || [];
     let matchRowIndex = -1;
     let timeIn = null;
  
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const [rowDate, , rowName, rowD] = rows[i];
-      // Match today's date, the operative's name, the site, and an incomplete entry (ends with " - )")
+    for (let i = rows.length - 1; i >= 1; i--) {
+      const row = rows[i];
+      const rowDate = row[0] ? String(row[0]).trim() : '';
+      const rowName = row[2] ? String(row[2]).trim() : '';
+      const rowD    = row[3] ? String(row[3]) : '';
+ 
       if (
         rowDate === date &&
         rowName === name &&
-        rowD && rowD.startsWith(`${site} (`) && rowD.endsWith(' - )')
+        rowD.startsWith(`${site} (`) && rowD.endsWith(' - )')
       ) {
-        matchRowIndex = i + 1; // Sheets rows are 1-indexed
-        // Extract the check-in time from "Site (HH:MM - )"
+        // Use the sheet row number stored in column F for a precise update
+        matchRowIndex = (row[12] && !isNaN(parseInt(row[12]))) ? parseInt(row[12]) : i + 1;
         const match = rowD.match(/\((\d{2}:\d{2}) - \)$/);
         if (match) timeIn = match[1];
         break;
