@@ -79,7 +79,8 @@ async function getScannersAssignments(firstName) {
     const rows = result.data.values || [];
     const assignments = [];
  
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const row      = rows[i];
       const day      = row[1]; // D
       const client   = row[2]; // E
       const site     = row[3]; // F
@@ -90,7 +91,8 @@ async function getScannersAssignments(firstName) {
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
         employee && employee.toLowerCase().trim() === firstName.toLowerCase().trim()
       ) {
-        assignments.push({ client, site, batch });
+        // Row 5 is the first data row (index 0 → sheet row 5)
+        assignments.push({ client, site, batch, rowNumber: i + 5 });
       }
     }
  
@@ -99,6 +101,123 @@ async function getScannersAssignments(firstName) {
   } catch (err) {
     console.error('Failed to look up assignments:', err.message);
     return [];
+  }
+}
+ 
+// Tick a checkbox (TRUE) in the Scanning Dashboard for the given row and column letter
+async function tickCheckbox(rowNumber, col) {
+  if (!googleAuth || !TRACKER_SHEET_ID) return;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: TRACKER_SHEET_ID,
+      range: `Scanning Dashboard!${col}${rowNumber}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[true]] },
+    });
+    console.log(`Ticked checkbox at ${col}${rowNumber}`);
+  } catch (err) {
+    console.error(`Failed to tick checkbox at ${col}${rowNumber}:`, err.message);
+  }
+}
+ 
+// Calculate hours and minutes between two HH:MM time strings
+function calcDuration(timeIn, timeOut) {
+  const [inH, inM]   = timeIn.split(':').map(Number);
+  const [outH, outM] = timeOut.split(':').map(Number);
+  const diffMins = (outH * 60 + outM) - (inH * 60 + inM);
+  if (diffMins <= 0) return '—';
+  const hours = Math.floor(diffMins / 60);
+  const mins  = diffMins % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+ 
+// Append a check-in row to the Archive tab, inserting a two-row gap when the date changes
+async function logArchiveCheckIn(name, site, time, date) {
+  if (!googleAuth || !SHEET_ID) return;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+ 
+    // Read existing archive data to check the last recorded date
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'Archive!A:A',
+    });
+    const dateCol = existing.data.values || [];
+ 
+    // Find the last non-empty date entry
+    let lastDate = null;
+    for (let i = dateCol.length - 1; i >= 0; i--) {
+      if (dateCol[i] && dateCol[i][0] && dateCol[i][0].trim()) {
+        lastDate = dateCol[i][0].trim();
+        break;
+      }
+    }
+ 
+    // If there's existing data from a different day, prepend two blank rows as a visual gap
+    const rowsToAppend = [];
+    if (lastDate && lastDate !== date) {
+      rowsToAppend.push(['', '', '', '', '']);
+      rowsToAppend.push(['', '', '', '', '']);
+    }
+    rowsToAppend.push([date, '', name, `${site} (${time} - )`, '']);
+ 
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: 'Archive!A:E',
+      valueInputOption: 'RAW',
+      resource: { values: rowsToAppend },
+    });
+    console.log(`Archive check-in logged: ${name} at ${site} ${time}`);
+  } catch (err) {
+    console.error('Failed to log archive check-in:', err.message);
+  }
+}
+ 
+// Update the matching check-in row in Archive with check-out time and total duration
+async function logArchiveCheckOut(name, site, timeOut, date) {
+  if (!googleAuth || !SHEET_ID) return;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'Archive!A:E',
+    });
+    const rows = result.data.values || [];
+    let matchRowIndex = -1;
+    let timeIn = null;
+ 
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const [rowDate, , rowName, rowD] = rows[i];
+      // Match today's date, the operative's name, the site, and an incomplete entry (ends with " - )")
+      if (
+        rowDate === date &&
+        rowName === name &&
+        rowD && rowD.startsWith(`${site} (`) && rowD.endsWith(' - )')
+      ) {
+        matchRowIndex = i + 1; // Sheets rows are 1-indexed
+        // Extract the check-in time from "Site (HH:MM - )"
+        const match = rowD.match(/\((\d{2}:\d{2}) - \)$/);
+        if (match) timeIn = match[1];
+        break;
+      }
+    }
+ 
+    if (matchRowIndex === -1) {
+      console.log(`No matching Archive check-in found for ${name} at ${site} today`);
+      return;
+    }
+ 
+    const duration = timeIn ? calcDuration(timeIn, timeOut) : '—';
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `Archive!D${matchRowIndex}:E${matchRowIndex}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[`${site} (${timeIn} - ${timeOut})`, duration]] },
+    });
+    console.log(`Archive check-out logged: ${name} at ${site}, duration ${duration}`);
+  } catch (err) {
+    console.error('Failed to log archive check-out:', err.message);
   }
 }
  
@@ -228,9 +347,13 @@ app.post('/webhook', async (req, res) => {
  
           if (pending.type === 'onsite') {
             await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
+            await logArchiveCheckIn(pending.name, selected.site, pending.time, pending.date);
+            await tickCheckbox(selected.rowNumber, 'L');
             await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site} (${selected.batch}) at ${pending.time}`);
           } else {
             await logOffSite(pending.name, selected.site, pending.time, pending.date);
+            await logArchiveCheckOut(pending.name, selected.site, pending.time, pending.date);
+            await tickCheckbox(selected.rowNumber, 'M');
             await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`);
           }
         } else {
@@ -248,8 +371,10 @@ app.post('/webhook', async (req, res) => {
         if (assignments.length === 0) {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
         } else if (assignments.length === 1) {
-          const { site, batch } = assignments[0];
+          const { site, batch, rowNumber } = assignments[0];
           await logOnSite(name, site, batch, time, date);
+          await logArchiveCheckIn(name, site, time, date);
+          await tickCheckbox(rowNumber, 'L');
           await sendMessage(`✅ Check-in recorded for ${name} at ${site} (${batch}) at ${time}`);
         } else {
           // Multiple sites — ask which one
@@ -266,8 +391,10 @@ app.post('/webhook', async (req, res) => {
         if (assignments.length === 0) {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
         } else if (assignments.length === 1) {
-          const { site } = assignments[0];
+          const { site, rowNumber } = assignments[0];
           await logOffSite(name, site, time, date);
+          await logArchiveCheckOut(name, site, time, date);
+          await tickCheckbox(rowNumber, 'M');
           await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`);
         } else {
           // Multiple sites — ask which one they're leaving
