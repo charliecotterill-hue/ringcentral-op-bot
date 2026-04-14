@@ -26,6 +26,38 @@ try {
 // In-memory store for pending site confirmations
 const pendingConfirmations = {};
  
+// Levenshtein distance — counts the minimum edits (insert, delete, substitute) to turn a into b
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+ 
+// Returns true if any single word in text is within maxDist edits of target
+function fuzzyWord(text, target, maxDist = 1) {
+  return text.split(/\s+/).some(w => levenshtein(w, target) <= maxDist);
+}
+ 
+// Returns true if any consecutive sequence of words in text is within maxDist edits of phrase
+function fuzzyPhrase(text, phrase, maxDist = 1) {
+  const words = text.split(/\s+/);
+  const phraseLen = phrase.split(/\s+/).length;
+  for (let i = 0; i <= words.length - phraseLen; i++) {
+    const chunk = words.slice(i, i + phraseLen).join(' ');
+    if (levenshtein(chunk, phrase) <= maxDist) return true;
+  }
+  return false;
+}
+ 
 // Detect on site messages
 function isOnSiteMessage(text) {
   const t = text.toLowerCase().trim();
@@ -57,7 +89,19 @@ function isOnSiteMessage(text) {
     'starting now', 'just starting', 'ready to start', 'starting up',
     'just pulled up', 'pulling up',
   ];
-  return onPhrases.some(p => t.includes(p));
+  if (onPhrases.some(p => t.includes(p))) return true;
+ 
+  // Fuzzy matches — catches any of the key trigger words/phrases with one character off
+  if (fuzzyPhrase(t, 'on site'))     return true;
+  if (fuzzyPhrase(t, 'at site'))     return true;
+  if (fuzzyPhrase(t, 'clock in'))    return true;
+  if (fuzzyPhrase(t, 'clocking in')) return true;
+  if (fuzzyWord(t,   'arrived'))     return true;
+  if (fuzzyWord(t,   'arriving'))    return true;
+  if (fuzzyPhrase(t, 'on location')) return true;
+  if (fuzzyPhrase(t, 'here now'))    return true;
+ 
+  return false;
 }
  
 // Detect off site messages
@@ -96,7 +140,22 @@ function isOffSiteMessage(text) {
     'signing off', 'sign off',
     'heading home', 'going home',
   ];
-  return offPhrases.some(p => t.includes(p));
+  if (offPhrases.some(p => t.includes(p))) return true;
+ 
+  // Fuzzy matches — catches any of the key trigger words/phrases with one character off
+  if (fuzzyPhrase(t, 'off site'))     return true;
+  if (fuzzyPhrase(t, 'left site'))    return true;
+  if (fuzzyPhrase(t, 'heading off'))  return true;
+  if (fuzzyPhrase(t, 'heading out'))  return true;
+  if (fuzzyPhrase(t, 'job done'))     return true;
+  if (fuzzyPhrase(t, 'all done'))     return true;
+  if (fuzzyPhrase(t, 'clock out'))    return true;
+  if (fuzzyPhrase(t, 'clocking out')) return true;
+  if (fuzzyWord(t,   'leaving'))      return true;
+  if (fuzzyWord(t,   'finished'))     return true;
+  if (fuzzyWord(t,   'wrapped'))      return true;
+ 
+  return false;
 }
  
 // Look up operative name from RingCentral
@@ -491,3 +550,4 @@ async function sendMessage(text) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
