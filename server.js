@@ -204,6 +204,7 @@ async function getScannersAssignments(firstName) {
         employee && employee.toLowerCase().trim() === firstName.toLowerCase().trim()
       ) {
         // Row 5 is the first data row (index 0 → sheet row 5)
+        console.log(`Match found — row ${i + 5}: day=${day}, employee=${employee}, site=${site}, batch=${batch}`);
         assignments.push({ client: client || '', site: site || '', batch: batch || '', rowNumber: i + 5 });
       }
     }
