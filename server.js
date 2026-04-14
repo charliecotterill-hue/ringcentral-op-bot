@@ -28,22 +28,75 @@ const pendingConfirmations = {};
  
 // Detect on site messages
 function isOnSiteMessage(text) {
-  const normalized = text.toLowerCase().trim();
-  return /\bon.?site\b/.test(normalized) ||
-    normalized.includes('on location') ||
-    normalized.startsWith('arrived');
+  const t = text.toLowerCase().trim();
+ 
+  // on site / onsite / on-site / on sight / on sit (common typos)
+  if (/\bon.?si(te?|ght)\b/.test(t)) return true;
+ 
+  // at site / at the site
+  if (/\bat\s+(the\s+)?site\b/.test(t)) return true;
+ 
+  // clock in / clocking in / clocked in / clockin
+  if (/\bcloc?k(ed|ing)?\s*in\b/.test(t)) return true;
+ 
+  // arrived / arriving / arived / ariving / arrvied and similar misspellings
+  if (/\barri?v+(ed|ing|es)?\b/.test(t)) return true;
+ 
+  // "here" or "her" (typo) only when the entire message is just that word
+  if (t === 'here' || t === 'her' || t === 'here now') return true;
+ 
+  // arriving now / arriving on site etc.
+  if (/\barriv(ing|al)\b/.test(t)) return true;
+ 
+  // catch-all phrase list — matches anywhere in the message
+  const onPhrases = [
+    'on location', 'on-location',
+    "i'm here", "im here", "i am here",
+    'here now', 'just got here', 'just got in',
+    'just got to', 'made it', 'just made it',
+    'starting now', 'just starting', 'ready to start', 'starting up',
+    'just pulled up', 'pulling up',
+  ];
+  return onPhrases.some(p => t.includes(p));
 }
  
 // Detect off site messages
 function isOffSiteMessage(text) {
-  const normalized = text.toLowerCase().trim();
-  return /\boff.?site\b/.test(normalized) ||
-    normalized.includes('left site') ||
-    normalized.includes('leaving') ||
-    normalized.startsWith('heading off') ||
-    normalized.startsWith('heading out') ||
-    normalized.includes('job done') ||
-    normalized.includes('all done');
+  const t = text.toLowerCase().trim();
+ 
+  // off site / offsite / off-site / off sight / off sit (common typos)
+  if (/\boff.?si(te?|ght)\b/.test(t)) return true;
+ 
+  // clock out / clocking out / clocked out / clockout
+  if (/\bcloc?k(ed|ing)?\s*out\b/.test(t)) return true;
+ 
+  // leaving / leavin (typo)
+  if (/\bleav(ing|in)\b/.test(t)) return true;
+ 
+  // finished / finsihed / finshed / fnished and similar misspellings
+  if (/\bfin+is?h(ed|ing)?\b/.test(t)) return true;
+ 
+  // heading off / heading out / headin off / headng out
+  if (/\bheadin+g?\s+(off|out)\b/.test(t)) return true;
+ 
+  // catch-all phrase list — matches anywhere in the message
+  const offPhrases = [
+    'left site', 'left the site',
+    'leaving now', 'just leaving',
+    'job done', 'all done', 'all done here',
+    'all finished', 'just finished', 'now finished',
+    'wrapped up', 'just wrapped', 'all wrapped',
+    'on my way', 'on my way back', 'on my way home',
+    'done for the day', 'done here', 'done now',
+    'left now', 'just left',
+    "i'm off", "im off", 'i am off',
+    "that's me done", 'thats me done',
+    "that's me off", 'thats me off',
+    "that's me", 'thats me',
+    'signing off', 'sign off',
+    'heading home', 'going home',
+  ];
+  return offPhrases.some(p => t.includes(p));
 }
  
 // Look up operative name from RingCentral
