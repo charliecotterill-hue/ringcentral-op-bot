@@ -4,11 +4,27 @@ const app = express();
 app.use(express.json());
  
 const PORT = process.env.PORT || 3000;
-const INCOMING_WEBHOOK_URL = process.env.INCOMING_WEBHOOK_URL;
+const INCOMING_WEBHOOK_URL = process.env.INCOMING_WEBHOOK_URL; // fallback for unknown channels
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
 const SHEET_ID = process.env.SHEET_ID;
 const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
+ 
+// Map of channel ID → allowed scanner first name (only this person triggers the bot)
+const CHANNEL_SCANNERS = {
+  '149401255942': 'Soloman',
+  '148269629446': 'Amelia',
+  '148269637638': 'Isoken',
+  '148666138630': 'Bijay',
+};
+ 
+// Map of channel ID → incoming webhook URL
+const CHANNEL_WEBHOOKS = {
+  '149401255942': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjA1NTMxIn0.3HUHXk4IHBBzueouCUWmjf5VP89bocP8BVhw6mI1LWM',
+  '148269629446': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjEzNzIzIn0.fklh7xMGo4lnsHvWEMyABDBsDVdOi14S2KnBmn12tr0',
+  '148269637638': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjMwMTA3In0.3Yiut3rhI765MVykyn3NSn19BUNNhHKDmA-4tefgITc',
+  '148666138630': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjM4Mjk5In0.GwXxjQjVx4rZF02FP-cWlqVL7iQ3LtMvKodHXeqadow',
+};
  
 // Set up Google Sheets authentication
 let googleAuth;
@@ -441,6 +457,9 @@ app.post('/webhook', async (req, res) => {
   if (event && event.body && event.body.text !== undefined) {
     const text = event.body.text;
     const creatorId = event.body.creatorId;
+    const groupId = event.body.groupId;
+    const webhookUrl = CHANNEL_WEBHOOKS[groupId] || INCOMING_WEBHOOK_URL;
+    console.log(`Message received — groupId: ${groupId}, creatorId: ${creatorId}`);
  
     // Ignore messages with no sender (e.g. incoming webhook posts from the bot itself)
     if (!creatorId) {
@@ -476,58 +495,63 @@ app.post('/webhook', async (req, res) => {
             await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
             await logArchiveCheckIn(pending.name, selected.site, pending.time, pending.date);
             await tickCheckbox(selected.rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.time}`);
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.time}`, pending.webhookUrl);
           } else {
             await logOffSite(pending.name, selected.site, pending.time, pending.date);
             await logArchiveCheckOut(pending.name, selected.site, pending.time, pending.date);
             await tickCheckbox(selected.rowNumber, 'M');
-            await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`);
+            await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`, pending.webhookUrl);
           }
         } else {
-          await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`);
+          await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
         }
  
         return res.status(200).send();
       }
  
+      // --- Whitelist check: only respond to the assigned scanner for this channel ---
+      const name = await getUserName(creatorId);
+      const allowedScanner = CHANNEL_SCANNERS[groupId];
+      if (allowedScanner && name.toLowerCase().trim() !== allowedScanner.toLowerCase().trim()) {
+        return res.status(200).send();
+      }
+ 
       // --- Handle on site messages ---
       if (isOnSiteMessage(cleanText)) {
-        const name = await getUserName(creatorId);
         const assignments = await getScannersAssignments(name);
  
         if (assignments.length === 0) {
-          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
+          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
           const { site, batch, rowNumber } = assignments[0];
           await logOnSite(name, site, batch, time, date);
           await logArchiveCheckIn(name, site, time, date);
           await tickCheckbox(rowNumber, 'L');
-          await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`);
+          await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
         } else {
           // Multiple sites — ask which one
-          pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date };
+          pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date, webhookUrl };
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
-          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`);
+          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`, webhookUrl);
         }
  
       // --- Handle off site messages ---
       } else if (isOffSiteMessage(cleanText)) {
-        const name = await getUserName(creatorId);
         const assignments = await getScannersAssignments(name);
  
         if (assignments.length === 0) {
-          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`);
+          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
           const { site, rowNumber } = assignments[0];
           await logOffSite(name, site, time, date);
           await logArchiveCheckOut(name, site, time, date);
           await tickCheckbox(rowNumber, 'M');
-          await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`);
+          await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`, webhookUrl);
         } else {
           // Multiple sites — ask which one they're leaving
-          pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date };
+          pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date, webhookUrl };
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
-          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`);
+          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`, webhookUrl);
         }
       }
     }
@@ -536,10 +560,11 @@ app.post('/webhook', async (req, res) => {
   res.status(200).send();
 });
  
-async function sendMessage(text) {
-  if (!INCOMING_WEBHOOK_URL) return;
+async function sendMessage(text, webhookUrl) {
+  const url = webhookUrl || INCOMING_WEBHOOK_URL;
+  if (!url) return;
   try {
-    const response = await fetch(INCOMING_WEBHOOK_URL, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -552,3 +577,4 @@ async function sendMessage(text) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
