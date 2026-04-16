@@ -186,6 +186,7 @@ async function getScannersAssignments(firstName) {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: TRACKER_SHEET_ID,
       range: 'Scanning Dashboard!C5:H1000',
+      valueRenderOption: 'FORMATTED_VALUE',
     });
  
     const rows = result.data.values || [];
