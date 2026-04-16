@@ -541,7 +541,7 @@ async function sendMessage(text) {
     const response = await fetch(INCOMING_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, displayName: 'Georgi' }),
     });
     if (!response.ok) console.error('Send failed:', await response.text());
     else console.log('Message sent!');
