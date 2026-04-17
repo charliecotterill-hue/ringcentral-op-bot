@@ -10,12 +10,13 @@ const SHEET_ID = process.env.SHEET_ID;
 const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
  
-// Map of channel ID → allowed scanner first name (only this person triggers the bot)
+// Map of channel ID → allowed scanner RC user ID (only this person triggers the bot)
+// IDs confirmed from logs — update Bijay and Isoken once their IDs are captured
 const CHANNEL_SCANNERS = {
-  '149401255942': 'Soloman',
-  '148269629446': 'Amelia',
-  '148269637638': 'Isoken',
-  '148666138630': 'Bijay',
+  '149401255942': '4840338044', // Soloman
+  '148269629446': '4790927044', // Amelia
+  '148269637638': '4790929044', // Isoken
+  '148666138630': '4807447044', // Bijay
 };
  
 // Map of channel ID → incoming webhook URL
@@ -510,11 +511,11 @@ app.post('/webhook', async (req, res) => {
       }
  
       // --- Whitelist check: only respond to the assigned scanner for this channel ---
-      const name = await getUserName(creatorId);
-      const allowedScanner = CHANNEL_SCANNERS[groupId];
-      if (allowedScanner && name.toLowerCase().trim() !== allowedScanner.toLowerCase().trim()) {
+      const allowedScannerId = CHANNEL_SCANNERS[groupId];
+      if (allowedScannerId && String(creatorId) !== String(allowedScannerId)) {
         return res.status(200).send();
       }
+      const name = await getUserName(creatorId);
  
       // --- Handle on site messages ---
       if (isOnSiteMessage(cleanText)) {
@@ -577,4 +578,3 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
