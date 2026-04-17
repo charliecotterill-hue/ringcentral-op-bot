@@ -141,8 +141,8 @@ function isOffSiteMessage(text) {
   // leaving / leavin (typo)
   if (/\bleav(ing|in)\b/.test(t)) return true;
  
-  // finished / finsihed / finshed / fnished and similar misspellings
-  if (/\bfin+is?h(ed|ing)?\b/.test(t)) return true;
+  // finished — but not when followed by "with", "the", "my" which suggests mid-task context
+  if (/\bfinish(ed|ing)?\b/.test(t) && !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an)\b/.test(t)) return true;
  
   // heading off / heading out / headin off / headng out
   if (/\bheadin+g?\s+(off|out)\b/.test(t)) return true;
@@ -176,7 +176,7 @@ function isOffSiteMessage(text) {
   if (fuzzyPhrase(t, 'clock out'))    return true;
   if (fuzzyPhrase(t, 'clocking out')) return true;
   if (fuzzyWord(t,   'leaving'))      return true;
-  if (fuzzyWord(t,   'finished'))     return true;
+  // fuzzyWord for 'finished' removed — too many false positives in normal conversation
   if (fuzzyWord(t,   'wrapped'))      return true;
  
   return false;
