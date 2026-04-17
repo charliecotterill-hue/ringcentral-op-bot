@@ -11,12 +11,19 @@ const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
  
 // Map of channel ID → allowed scanner RC user ID (only this person triggers the bot)
-// IDs confirmed from logs — update Bijay and Isoken once their IDs are captured
 const CHANNEL_SCANNERS = {
   '149401255942': '4840338044', // Soloman
   '148269629446': '4790927044', // Amelia
   '148269637638': '4790929044', // Isoken
   '148666138630': '4807447044', // Bijay
+};
+ 
+// Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
+const SCANNER_NAMES = {
+  '4840338044': 'Soloman',
+  '4790927044': 'Amelia',
+  '4790929044': 'Isoken',
+  '4807447044': 'Bijay',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -175,8 +182,9 @@ function isOffSiteMessage(text) {
   return false;
 }
  
-// Look up operative name from RingCentral
+// Look up operative name — checks local map first, falls back to RC API
 async function getUserName(personId) {
+  if (SCANNER_NAMES[String(personId)]) return SCANNER_NAMES[String(personId)];
   if (!RC_BOT_TOKEN) return personId;
   try {
     const response = await fetch(
