@@ -157,7 +157,8 @@ function isOffSiteMessage(text) {
     'job done', 'all done', 'all done here',
     'all finished', 'just finished', 'now finished',
     'wrapped up', 'just wrapped', 'all wrapped',
-    'on my way', 'on my way back', 'on my way home',
+    'on my way back', 'on my way home',
+    // 'on my way' handled separately below to exclude 'on my way to...'
     'done for the day', 'done here', 'done now',
     'left now', 'just left',
     "i'm off", "im off", 'i am off',
@@ -181,6 +182,12 @@ function isOffSiteMessage(text) {
   if (fuzzyWord(t,   'leaving'))      return true;
   // fuzzyWord for 'finished' removed — too many false positives in normal conversation
   if (fuzzyWord(t,   'wrapped'))      return true;
+ 
+  // 'on my way' triggers unless followed by 'to the/a/an/office/hospital' etc. but NOT 'to site'
+  if (t.includes('on my way')) {
+    if (/\bon my way\s+to\s+site\b/.test(t)) return true;
+    if (!/\bon my way\s+to\b/.test(t)) return true;
+  }
  
   return false;
 }
