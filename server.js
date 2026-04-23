@@ -90,7 +90,8 @@ function isOnSiteMessage(text) {
   const t = text.toLowerCase().trim();
  
   // on site / onsite / on-site / on sight / on sit (common typos)
-  if (/\bon.?si(te?|ght)\b/.test(t)) return true;
+  // but not in future/conditional context e.g. "when I'm on site", "will be on site"
+  if (/\bon.?si(te?|ght)\b/.test(t) && !/\b(when|once|until|will be|going to be|about to be|should be|if)\b.{0,20}on.?si(te?|ght)\b/.test(t)) return true;
  
   // at site / at the site
   if (/\bat\s+(the\s+)?site\b/.test(t)) return true;
@@ -596,3 +597,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
