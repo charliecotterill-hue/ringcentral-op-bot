@@ -356,10 +356,10 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
       range: 'Archive!A:M',
     });
     const rows = result.data.values || [];
-    let matchRowIndex = -1;
-    let timeIn = null;
  
-    for (let i = rows.length - 1; i >= 1; i--) {
+    // Collect ALL incomplete check-in rows for this scanner/site/date
+    const matches = [];
+    for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const rowDate = row[0] ? String(row[0]).trim() : '';
       const rowName = row[2] ? String(row[2]).trim() : '';
@@ -370,27 +370,29 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
         rowName === name &&
         rowD.startsWith(`${site} (`) && rowD.endsWith(' - )')
       ) {
-        // Use the sheet row number stored in column F for a precise update
-        matchRowIndex = (row[12] && !isNaN(parseInt(row[12]))) ? parseInt(row[12]) : i + 1;
+        const sheetRow = (row[12] && !isNaN(parseInt(row[12]))) ? parseInt(row[12]) : i + 1;
         const match = rowD.match(/\((\d{2}:\d{2}) - \)$/);
-        if (match) timeIn = match[1];
-        break;
+        const timeIn = match ? match[1] : null;
+        matches.push({ sheetRow, timeIn });
       }
     }
  
-    if (matchRowIndex === -1) {
+    if (matches.length === 0) {
       console.log(`No matching Archive check-in found for ${name} at ${site} today`);
       return;
     }
  
-    const duration = timeIn ? calcDuration(timeIn, timeOut) : '—';
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: `Archive!D${matchRowIndex}:E${matchRowIndex}`,
-      valueInputOption: 'RAW',
-      resource: { values: [[`${site} (${timeIn} - ${timeOut})`, duration]] },
-    });
-    console.log(`Archive check-out logged: ${name} at ${site}, duration ${duration}`);
+    // Update all matching rows with the check-out time and duration
+    for (const { sheetRow, timeIn } of matches) {
+      const duration = timeIn ? calcDuration(timeIn, timeOut) : '—';
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `Archive!D${sheetRow}:E${sheetRow}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[`${site} (${timeIn} - ${timeOut})`, duration]] },
+      });
+      console.log(`Archive check-out logged: ${name} at ${site} row ${sheetRow}, duration ${duration}`);
+    }
   } catch (err) {
     console.error('Failed to log archive check-out:', err.message);
   }
@@ -609,3 +611,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
