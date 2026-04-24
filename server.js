@@ -17,6 +17,10 @@ const CHANNEL_SCANNERS = {
   '148269637638': '4790929044', // Isoken
   '148666138630': '4807447044', // Bijay
   '111765692422': '2806324044', // Erwin
+  '84528357382':  '2492407021', // Billy
+  '138135478278': '4327964044', // Muzayam
+  '137018212358': '1004395045', // Taheb
+  '65752907782':  '245660040',  // Ibrahim
 };
  
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -26,6 +30,10 @@ const SCANNER_NAMES = {
   '4790929044': 'Isoken',
   '4807447044': 'Bijay',
   '2806324044': 'Erwin',
+  '2492407021': 'Billy',
+  '4327964044': 'Muzayam',
+  '1004395045': 'Taheb',
+  '245660040':  'Ibrahim',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -35,6 +43,10 @@ const CHANNEL_WEBHOOKS = {
   '148269637638': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjMwMTA3In0.3Yiut3rhI765MVykyn3NSn19BUNNhHKDmA-4tefgITc',
   '148666138630': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjM4Mjk5In0.GwXxjQjVx4rZF02FP-cWlqVL7iQ3LtMvKodHXeqadow',
   '111765692422': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzEyMDgxOTQ3In0.-Dl-3nmEc4wuTkJAeSyp7cMr55Tkav9a_-NMGViTW5U',
+  '84528357382':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0Njc4ODExIn0.UKkK718Nyk6gYiI8bZ2-r2HpTkFjPe7QlL5CpRV2XgI',
+  '138135478278': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzQ0MzQ3In0.z1X051gWcpaHxG2OQKxHr0VygVYwF-Lljm4F-Hpht7U',
+  '137018212358': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzUyNTM5In0.qo9CPBKPrlKhGaoN1ZxMDulUB_praXgQFJDWdXRKRSU',
+  '65752907782':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzM2MTU1In0.SOEJyBCqXqqvUmKjllN6KpD6c-CapH9IvW91s0PwRp4',
 };
  
 // Set up Google Sheets authentication
@@ -597,4 +609,3 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
