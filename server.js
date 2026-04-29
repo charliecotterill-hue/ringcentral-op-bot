@@ -21,6 +21,12 @@ const CHANNEL_SCANNERS = {
   '138135478278': '4327964044', // Muzayam
   '137018212358': '1004395045', // Taheb
   '65752907782':  '245660040',  // Ibrahim
+  '67913056262':  '4016232020', // Lewis
+  '146155782150': '4694875044', // Emmadadeen
+  '137018204166': '1004407045', // Asha
+  '77664509958':  '823968067',  // Jack
+  '152018313222': '4924869044', // Ahmed
+  '158220779526': '7442969044', // Matt
 };
  
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -34,6 +40,12 @@ const SCANNER_NAMES = {
   '4327964044': 'Muzayam',
   '1004395045': 'Taheb',
   '245660040':  'Ibrahim',
+  '4016232020': 'Lewis',
+  '4694875044': 'Emmadadeen',
+  '1004407045': 'Asha',
+  '823968067':  'Jack',
+  '4924869044': 'Ahmed',
+  '7442969044': 'Matt',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -47,6 +59,12 @@ const CHANNEL_WEBHOOKS = {
   '138135478278': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzQ0MzQ3In0.z1X051gWcpaHxG2OQKxHr0VygVYwF-Lljm4F-Hpht7U',
   '137018212358': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzUyNTM5In0.qo9CPBKPrlKhGaoN1ZxMDulUB_praXgQFJDWdXRKRSU',
   '65752907782':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzE0NzM2MTU1In0.SOEJyBCqXqqvUmKjllN6KpD6c-CapH9IvW91s0PwRp4',
+  '67913056262':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIxMDYwMzc5In0.tMsH-oC0ejOGxi-oRx481Qje9lGlqZURGQSnzdKqYmw',
+  '146155782150': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIxMDY4NTcxIn0.qtSLBSfPT7Ua0pNVQ0A7bDp6ecbjE8fh9BE8Iw2IhSo',
+  '137018204166': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODQ2MjM1In0.Ivm6qaiBTJsRxenYZqYcSAW262WR-gh4Fs_KLUTOVYs',
+  '77664509958':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODU0NDI3In0.lxLDCPSrXZ9An9h1mqZPo98UHPEYdcuzhmDVnCmRfI0',
+  '152018313222': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODYyNjE5In0.oVYriDlNBDl7QkLBMK2Zumwfn1ap4CZfWSzOhb57K9I',
+  '158220779526': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODcwODExIn0.J9F_74j8GnwkrneTTcR6q79qtSI4LBk8F54eVvHwJes',
 };
  
 // Set up Google Sheets authentication
@@ -611,4 +629,3 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
