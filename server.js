@@ -150,7 +150,7 @@ function isOnSiteMessage(text) {
   if (onPhrases.some(p => t.includes(p))) return true;
  
   // Fuzzy matches — catches any of the key trigger words/phrases with one character off
-  if (fuzzyPhrase(t, 'on site'))     return true;
+  // fuzzyPhrase for 'on site' removed — covered by regex above which includes future/conditional exclusion
   if (fuzzyPhrase(t, 'at site'))     return true;
   if (fuzzyPhrase(t, 'clock in'))    return true;
   if (fuzzyPhrase(t, 'clocking in')) return true;
