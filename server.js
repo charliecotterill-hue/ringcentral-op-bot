@@ -537,6 +537,12 @@ app.post('/webhook', async (req, res) => {
       // --- Handle pending site confirmation (scanner replied with a number) ---
       if (pendingConfirmations[creatorId]) {
         const pending = pendingConfirmations[creatorId];
+ 
+        // Expire pending confirmations older than 30 minutes
+        if (Date.now() - pending.timestamp > 30 * 60 * 1000) {
+          delete pendingConfirmations[creatorId];
+        } else {
+ 
         const choice = parseInt(cleanText);
  
         if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
@@ -558,6 +564,7 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
         }
  
+        } // end of non-expired confirmation block
         return res.status(200).send();
       }
  
@@ -582,7 +589,7 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
         } else {
           // Multiple sites — ask which one
-          pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date, webhookUrl };
+          pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date, webhookUrl, timestamp: Date.now() };
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`, webhookUrl);
         }
@@ -601,7 +608,7 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`, webhookUrl);
         } else {
           // Multiple sites — ask which one they're leaving
-          pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date, webhookUrl };
+          pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date, webhookUrl, timestamp: Date.now() };
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`, webhookUrl);
         }
