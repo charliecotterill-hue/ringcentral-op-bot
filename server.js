@@ -27,6 +27,9 @@ const CHANNEL_SCANNERS = {
   '77664509958':  '823968067',  // Jack
   '152018313222': '4924869044', // Ahmed
   '158220779526': '7442969044', // Matt
+  '71424065542':  '538152044',  // Elliot
+  '153498329094': '4966017044', // Joseph
+  '151443390470': '4906976044', // Alexandra
 };
  
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -46,6 +49,9 @@ const SCANNER_NAMES = {
   '823968067':  'Jack',
   '4924869044': 'Ahmed',
   '7442969044': 'Matt',
+  '538152044':  'Elliot',
+  '4966017044': 'Joseph',
+  '4906976044': 'Alexandra',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -65,6 +71,9 @@ const CHANNEL_WEBHOOKS = {
   '77664509958':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODU0NDI3In0.lxLDCPSrXZ9An9h1mqZPo98UHPEYdcuzhmDVnCmRfI0',
   '152018313222': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODYyNjE5In0.oVYriDlNBDl7QkLBMK2Zumwfn1ap4CZfWSzOhb57K9I',
   '158220779526': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzIyODcwODExIn0.J9F_74j8GnwkrneTTcR6q79qtSI4LBk8F54eVvHwJes',
+  '71424065542':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDAwODU5In0.uRkOSP_SbecxI47D0d6xyBANYzjKjnvkcx4G8M3CkZs',
+  '153498329094': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDA5MDUxIn0.5K05jecX7ylLo_xKFQji45Fjut9YogROV0c8NNq71ag',
+  '151443390470': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDI1NDM1In0.hmpk7EyEa4DT_s9VyI5M5qhGMmx07n6MXsGAlTl4UIQ',
 };
  
 // Set up Google Sheets authentication
@@ -636,3 +645,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
