@@ -30,6 +30,9 @@ const CHANNEL_SCANNERS = {
   '71424065542':  '538152044',  // Elliot
   '153498329094': '4966017044', // Joseph
   '151443390470': '4906976044', // Alexandra
+  '148071874566': '4781541044', // Sa'ad
+  '145034674182': '1092080045', // Omar
+  '152342814726': '4936055044', // Louie
 };
  
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -52,6 +55,9 @@ const SCANNER_NAMES = {
   '538152044':  'Elliot',
   '4966017044': 'Joseph',
   '4906976044': 'Alexandra',
+  '4781541044': "Sa'ad",
+  '1092080045': 'Omar',
+  '4936055044': 'Louie',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -74,6 +80,9 @@ const CHANNEL_WEBHOOKS = {
   '71424065542':  'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDAwODU5In0.uRkOSP_SbecxI47D0d6xyBANYzjKjnvkcx4G8M3CkZs',
   '153498329094': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDA5MDUxIn0.5K05jecX7ylLo_xKFQji45Fjut9YogROV0c8NNq71ag',
   '151443390470': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDI1NDM1In0.hmpk7EyEa4DT_s9VyI5M5qhGMmx07n6MXsGAlTl4UIQ',
+  '148071874566': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDMzNjI3In0.vuSpdbHMIAufVtzFFDxJQY1mtPp1LrmSfy2sptFHAVY',
+  '145034674182': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDE3MjQzIn0.SlOMGvIk9vBLwC55tkR-Tvb4ABP4rfAuKszEEFKSO4E',
+  '152342814726': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDU4MjAzIn0.y2H2fqj-byvd-0pi3Je0tmMWeONIMwd_nDDqPj4J9Pw',
 };
  
 // Set up Google Sheets authentication
