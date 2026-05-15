@@ -514,6 +514,103 @@ async function logOffSite(name, site, time, date) {
  
 app.get('/', (req, res) => res.send('Bot is running'));
  
+// Slack webhook endpoint — handles URL verification and upload complete events
+app.post('/slack-webhook', async (req, res) => {
+  const body = req.body;
+ 
+  // Slack URL verification challenge
+  if (body.type === 'url_verification') {
+    return res.json({ challenge: body.challenge });
+  }
+ 
+  // Handle message events — only process upload complete notifications
+  if (body.event && body.event.type === 'message' && body.event.text) {
+    const text = body.event.text;
+ 
+    // Only trigger on "complete" messages, not "commenced"
+    if (!text.toLowerCase().includes('complete')) {
+      return res.status(200).send();
+    }
+ 
+    // Extract site code (e.g. turner_nycfcstadium)
+    const siteMatch = text.match(/complete for ([a-z0-9_]+)\./i);
+    // Extract dashboard row identifier number
+    const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
+ 
+    if (siteMatch && rowMatch) {
+      const slackSiteCode = siteMatch[1].toLowerCase();
+      const batchNumber = rowMatch[1];
+      console.log(`Upload complete — site code: ${slackSiteCode}, batch: ${batchNumber}`);
+      await updatePSTUploadComplete(slackSiteCode, batchNumber);
+    }
+  }
+ 
+  res.status(200).send();
+});
+ 
+// Look up site name from Site Setup tab and update column J on Scanning Dashboard
+async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
+  if (!googleAuth || !TRACKER_SHEET_ID) return;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+ 
+    // Step 1: Look up the site code in Site Setup tab (Column A = code, Column B = PST name)
+    const siteSetup = await sheets.spreadsheets.values.get({
+      spreadsheetId: TRACKER_SHEET_ID,
+      range: 'Site Setup!A:B',
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+    const siteRows = siteSetup.data.values || [];
+    let pstSiteName = null;
+    for (const row of siteRows) {
+      if (row[0] && row[0].toLowerCase().trim() === slackSiteCode) {
+        pstSiteName = row[1];
+        break;
+      }
+    }
+    if (!pstSiteName) {
+      console.log(`No PST match found for Slack site code: ${slackSiteCode}`);
+      return;
+    }
+    console.log(`Matched site code ${slackSiteCode} → ${pstSiteName}`);
+ 
+    // Step 2: Find matching row in Scanning Dashboard (column F = site, column H = batch number)
+    const dashboard = await sheets.spreadsheets.values.get({
+      spreadsheetId: TRACKER_SHEET_ID,
+      range: 'Scanning Dashboard!C5:H1000',
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+    const dashRows = dashboard.data.values || [];
+    let matchRow = -1;
+    for (let i = 0; i < dashRows.length; i++) {
+      const site  = dashRows[i][3]; // Column F
+      const batch = dashRows[i][5]; // Column H
+      if (
+        site && site.trim() === pstSiteName.trim() &&
+        batch && batch.toString().includes(batchNumber)
+      ) {
+        matchRow = i + 5; // Row 5 is the first data row
+        break;
+      }
+    }
+    if (matchRow === -1) {
+      console.log(`No Scanning Dashboard row found for ${pstSiteName} batch ${batchNumber}`);
+      return;
+    }
+ 
+    // Step 3: Update column J to 1 (upload complete)
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: TRACKER_SHEET_ID,
+      range: `Scanning Dashboard!J${matchRow}`,
+      valueInputOption: 'RAW',
+      resource: { values: [[1]] },
+    });
+    console.log(`Column J updated to 1 for ${pstSiteName} batch ${batchNumber} at row ${matchRow}`);
+  } catch (err) {
+    console.error('Failed to update PST upload complete:', err.message);
+  }
+}
+ 
 app.post('/webhook', async (req, res) => {
   const validationToken = req.headers['validation-token'];
   if (validationToken) {
