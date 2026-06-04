@@ -576,7 +576,8 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
     }
     console.log(`Matched site code ${slackSiteCode} → ${pstSiteName}`);
  
-    // Step 2: Find matching row in Scanning Dashboard (column F = site, column H = batch number)
+    // Step 2: Find matching row in Scanning Dashboard (column D = day, column F = site, column H = batch number)
+    const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' });
     const dashboard = await sheets.spreadsheets.values.get({
       spreadsheetId: TRACKER_SHEET_ID,
       range: 'Scanning Dashboard!C5:H1000',
@@ -585,9 +586,11 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
     const dashRows = dashboard.data.values || [];
     let matchRow = -1;
     for (let i = 0; i < dashRows.length; i++) {
+      const day   = dashRows[i][1]; // Column D
       const site  = dashRows[i][3]; // Column F
       const batch = dashRows[i][5]; // Column H
       if (
+        day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
         site && site.trim() === pstSiteName.trim() &&
         batch && batch.toString().includes(batchNumber)
       ) {
@@ -753,4 +756,3 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
