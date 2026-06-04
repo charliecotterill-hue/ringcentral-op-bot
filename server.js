@@ -538,7 +538,9 @@ app.post('/slack-webhook', async (req, res) => {
     const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
  
     if (siteMatch && rowMatch) {
-      const slackSiteCode = siteMatch[1].toLowerCase();
+      const fullCode = siteMatch[1].toLowerCase();
+      // Use only the part after the underscore (e.g. cw_onenorthquay → onenorthquay)
+      const slackSiteCode = fullCode.includes('_') ? fullCode.split('_').slice(1).join('_') : fullCode;
       const batchNumber = rowMatch[1];
       console.log(`Upload complete — site code: ${slackSiteCode}, batch: ${batchNumber}`);
       await updatePSTUploadComplete(slackSiteCode, batchNumber);
