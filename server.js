@@ -147,8 +147,8 @@ function isOnSiteMessage(text) {
   // clock in / clocking in / clocked in / clockin
   if (/\bcloc?k(ed|ing)?\s*in\b/.test(t)) return true;
  
-  // arrived / arriving / arived / ariving / arrvied and similar misspellings
-  if (/\barri?v+(ed|ing|es)?\b/.test(t)) return true;
+  // arrived / arriving — but not when referring to past/other people e.g. "arrived yesterday", "they all arrived"
+  if (/\barri?v+(ed|ing|es)?\b/.test(t) && !/\b(yesterday|last\s+\w+|they|he|she|we|all)\b.{0,20}\barri?v+/.test(t)) return true;
  
   // "here" or "her" (typo) only when the entire message is just that word
   if (t === 'here' || t === 'her' || t === 'here now') return true;
@@ -193,8 +193,8 @@ function isOffSiteMessage(text) {
   // leaving / leavin (typo)
   if (/\bleav(ing|in)\b/.test(t)) return true;
  
-  // finished — but not when followed by "with", "the", "my" which suggests mid-task context
-  if (/\bfinish(ed|ing)?\b/.test(t) && !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an)\b/.test(t)) return true;
+  // finished — but not when followed by words suggesting mid-task context
+  if (/\bfinish(ed|ing)?\b/.test(t) && !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an|last|this|each|every|that)\b/.test(t)) return true;
  
   // heading off / heading out / headin off / headng out
   if (/\bheadin+g?\s+(off|out)\b/.test(t)) return true;
@@ -756,3 +756,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
