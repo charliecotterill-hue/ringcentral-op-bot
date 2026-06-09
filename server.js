@@ -138,8 +138,11 @@ function isOnSiteMessage(text) {
   const t = text.toLowerCase().trim();
  
   // on site / onsite / on-site / on sight / on sit (common typos)
-  // but not in future/conditional context e.g. "when I'm on site", "will be on site"
-  if (/\bon.?si(te?|ght)\b/.test(t) && !/\b(when|once|until|will be|going to be|about to be|should be|if)\b.{0,20}on.?si(te?|ght)\b/.test(t)) return true;
+  // but not in future/conditional or negative context
+  if (/\bon.?si(te?|ght)\b/.test(t) &&
+    !/\b(when|once|until|will be|going to be|about to be|should be|if)\b.{0,20}on.?si(te?|ght)\b/.test(t) &&
+    !/\b(not|no|never|wasn't|isn't|aren't|haven't|don't|doesn't|wont|won't|cant|can't)\b.{0,10}on.?si(te?|ght)\b/.test(t) &&
+    !/\bon.?si(te?|ght)\b.{0,10}\b(yet|today)\b/.test(t)) return true;
  
   // at site / at the site
   if (/\bat\s+(the\s+)?site\b/.test(t)) return true;
@@ -162,7 +165,7 @@ function isOnSiteMessage(text) {
     "i'm here", "im here", "i am here",
     'here now', 'just got here', 'just got in',
     'just got to', 'made it', 'just made it',
-    'starting now', 'just starting', 'ready to start', 'starting up',
+    'starting now', 'just starting', 'starting up',
     'just pulled up', 'pulling up',
   ];
   if (onPhrases.some(p => t.includes(p))) return true;
@@ -434,6 +437,29 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
   }
 }
  
+// Check if scanner already has a completed visit (timeIn + timeOut) for this site today
+async function checkCompletedEntry(name, site, date) {
+  if (!googleAuth || !SHEET_ID) return null;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'Sheet1!A2:F1000',
+    });
+    const rows = result.data.values || [];
+    for (const row of rows) {
+      const [rowDate, rowTimeIn, rowName, rowSite, , rowTimeOut] = row;
+      if (rowDate === date && rowName === name && rowSite === site && rowTimeIn && rowTimeOut) {
+        return { timeIn: rowTimeIn, timeOut: rowTimeOut };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('Failed to check completed entry:', err.message);
+    return null;
+  }
+}
+ 
 // Log on site check-in to the On Site Google Sheet
 async function logOnSite(name, site, batch, time, date) {
   if (!googleAuth || !SHEET_ID) {
@@ -663,6 +689,20 @@ app.post('/webhook', async (req, res) => {
           delete pendingConfirmations[creatorId];
         } else {
  
+        // --- Handle YES/NO response for duplicate check-in confirmation ---
+        if (pending.type === 'duplicate_checkin') {
+          const reply = cleanText.toLowerCase().trim();
+          delete pendingConfirmations[creatorId];
+          if (reply === 'yes' || reply === 'y') {
+            await logOnSite(pending.name, pending.site, pending.batch, pending.time, pending.date);
+            await logArchiveCheckIn(pending.name, pending.site, pending.time, pending.date);
+            await tickCheckbox(pending.rowNumber, 'L');
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${pending.site}${pending.batch ? ` (${pending.batch})` : ''} at ${pending.time}`, pending.webhookUrl);
+          } else {
+            await sendMessage(`No problem, cancelled.`, pending.webhookUrl);
+          }
+        } else {
+ 
         const choice = parseInt(cleanText);
  
         if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
@@ -684,6 +724,8 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
         }
  
+        } // end of non-duplicate confirmation block
+ 
         } // end of non-expired confirmation block
         return res.status(200).send();
       }
@@ -703,16 +745,25 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
           const { site, batch, rowNumber } = assignments[0];
-          await logOnSite(name, site, batch, time, date);
-          await logArchiveCheckIn(name, site, time, date);
-          await tickCheckbox(rowNumber, 'L');
-          await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
+ 
+          // Check if scanner already has a completed visit for this site today
+          const completed = await checkCompletedEntry(name, site, date);
+          if (completed) {
+            pendingConfirmations[creatorId] = { type: 'duplicate_checkin', name, site, batch, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
+            await sendMessage(`Hi ${name}, it looks like you already completed a visit at ${site} today (checked in at ${completed.timeIn}, checked out at ${completed.timeOut}). Would you like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
+          } else {
+            await logOnSite(name, site, batch, time, date);
+            await logArchiveCheckIn(name, site, time, date);
+            await tickCheckbox(rowNumber, 'L');
+            await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
+          }
         } else {
           // Multiple sites — ask which one
           pendingConfirmations[creatorId] = { type: 'onsite', assignments, name, time, date, webhookUrl, timestamp: Date.now() };
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`, webhookUrl);
         }
+ 
  
       // --- Handle off site messages ---
       } else if (isOffSiteMessage(cleanText)) {
@@ -756,4 +807,3 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
- 
