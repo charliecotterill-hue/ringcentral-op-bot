@@ -133,6 +133,56 @@ function fuzzyPhrase(text, phrase, maxDist = 1) {
   return false;
 }
  
+// Extract a HH:MM time string from a message (e.g. "10", "10:30", "9am", "10:30am")
+function extractMentionedTime(text) {
+  const t = text.toLowerCase();
+  // HH:MM or H:MM optionally with am/pm
+  const colonMatch = t.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/);
+  if (colonMatch) {
+    let h = parseInt(colonMatch[1]);
+    const m = parseInt(colonMatch[2]);
+    const ampm = colonMatch[3];
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+  // H am/pm or H am / H pm (e.g. "10am", "9 pm")
+  const ampmMatch = t.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1]);
+    const ampm = ampmMatch[2];
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    if (h >= 0 && h <= 23) return `${String(h).padStart(2, '0')}:00`;
+  }
+  // Standalone hour after "at" or "since" (e.g. "at 10", "since 9")
+  const atMatch = t.match(/\b(?:at|since)\s+(\d{1,2})\b/);
+  if (atMatch) {
+    const h = parseInt(atMatch[1]);
+    if (h >= 5 && h <= 23) return `${String(h).padStart(2, '0')}:00`;
+  }
+  return null;
+}
+ 
+// Detect a late/forgotten check-in — scanner mentions a specific past arrival time with an apology/context hint
+function isLateCheckInMessage(text) {
+  const t = text.toLowerCase().trim();
+  const retroPhrases = [
+    'forgot', 'forget', 'apolog', 'sorry i', 'meant to',
+    'should have messaged', 'should have checked',
+    'been here since', 'been on site since',
+    'was here at', 'was on site at', 'was at site at',
+    'got here at', 'got on site at', 'got in at',
+    'have been here', 'have been on site',
+    'i was here', 'been here from',
+  ];
+  const hasRetroPhrase = retroPhrases.some(p => t.includes(p));
+  if (!hasRetroPhrase) return false;
+  return extractMentionedTime(t) !== null;
+}
+ 
 // Detect on site messages
 function isOnSiteMessage(text) {
   const t = text.toLowerCase().trim();
@@ -689,42 +739,55 @@ app.post('/webhook', async (req, res) => {
           delete pendingConfirmations[creatorId];
         } else {
  
-        // --- Handle YES/NO response for duplicate check-in confirmation ---
-        if (pending.type === 'duplicate_checkin') {
+        // --- YES/NO responses (duplicate_checkin or late_checkin) ---
+        if (pending.type === 'duplicate_checkin' || pending.type === 'late_checkin') {
           const reply = cleanText.toLowerCase().trim();
           delete pendingConfirmations[creatorId];
           if (reply === 'yes' || reply === 'y') {
-            await logOnSite(pending.name, pending.site, pending.batch, pending.time, pending.date);
-            await logArchiveCheckIn(pending.name, pending.site, pending.time, pending.date);
+            const checkInTime = pending.type === 'late_checkin' ? pending.lateTime : pending.time;
+            await logOnSite(pending.name, pending.site, pending.batch, checkInTime, pending.date);
+            await logArchiveCheckIn(pending.name, pending.site, checkInTime, pending.date);
             await tickCheckbox(pending.rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${pending.site}${pending.batch ? ` (${pending.batch})` : ''} at ${pending.time}`, pending.webhookUrl);
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${pending.site}${pending.batch ? ` (${pending.batch})` : ''} at ${checkInTime}`, pending.webhookUrl);
           } else {
-            await sendMessage(`No problem, cancelled.`, pending.webhookUrl);
+            await sendMessage(`No problem, not recorded.`, pending.webhookUrl);
           }
-        } else {
  
-        const choice = parseInt(cleanText);
- 
-        if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
-          const selected = pending.assignments[choice - 1];
-          delete pendingConfirmations[creatorId];
- 
-          if (pending.type === 'onsite') {
-            await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
-            await logArchiveCheckIn(pending.name, selected.site, pending.time, pending.date);
+        // --- Numeric choice for multi-site late check-in ---
+        } else if (pending.type === 'late_checkin_multisite') {
+          const choice = parseInt(cleanText);
+          if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
+            const selected = pending.assignments[choice - 1];
+            delete pendingConfirmations[creatorId];
+            await logOnSite(pending.name, selected.site, selected.batch, pending.lateTime, pending.date);
+            await logArchiveCheckIn(pending.name, selected.site, pending.lateTime, pending.date);
             await tickCheckbox(selected.rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.time}`, pending.webhookUrl);
+            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.lateTime}`, pending.webhookUrl);
           } else {
-            await logOffSite(pending.name, selected.site, pending.time, pending.date);
-            await logArchiveCheckOut(pending.name, selected.site, pending.time, pending.date);
-            await tickCheckbox(selected.rowNumber, 'M');
-            await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`, pending.webhookUrl);
+            await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
           }
-        } else {
-          await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
-        }
  
-        } // end of non-duplicate confirmation block
+        // --- Numeric choice for regular multi-site on/off-site ---
+        } else {
+          const choice = parseInt(cleanText);
+          if (!isNaN(choice) && choice >= 1 && choice <= pending.assignments.length) {
+            const selected = pending.assignments[choice - 1];
+            delete pendingConfirmations[creatorId];
+            if (pending.type === 'onsite') {
+              await logOnSite(pending.name, selected.site, selected.batch, pending.time, pending.date);
+              await logArchiveCheckIn(pending.name, selected.site, pending.time, pending.date);
+              await tickCheckbox(selected.rowNumber, 'L');
+              await sendMessage(`✅ Check-in recorded for ${pending.name} at ${selected.site}${selected.batch ? ` (${selected.batch})` : ''} at ${pending.time}`, pending.webhookUrl);
+            } else {
+              await logOffSite(pending.name, selected.site, pending.time, pending.date);
+              await logArchiveCheckOut(pending.name, selected.site, pending.time, pending.date);
+              await tickCheckbox(selected.rowNumber, 'M');
+              await sendMessage(`✅ Check-out recorded for ${pending.name} at ${selected.site} at ${pending.time}`, pending.webhookUrl);
+            }
+          } else {
+            await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
+          }
+        } // end confirmation type handling
  
         } // end of non-expired confirmation block
         return res.status(200).send();
@@ -737,8 +800,26 @@ app.post('/webhook', async (req, res) => {
       }
       const name = await getUserName(creatorId);
  
+      // --- Handle late/forgotten check-in (scanner mentions they arrived at a past time) ---
+      if (isLateCheckInMessage(cleanText)) {
+        const lateTime = extractMentionedTime(cleanText.toLowerCase());
+        const assignments = await getScannersAssignments(name);
+ 
+        if (assignments.length === 0) {
+          await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
+        } else if (assignments.length === 1) {
+          const { site, batch, rowNumber } = assignments[0];
+          pendingConfirmations[creatorId] = { type: 'late_checkin', name, site, batch, rowNumber, lateTime, date, webhookUrl, timestamp: Date.now() };
+          await sendMessage(`Hi ${name}, would you like us to record your arrival time as ${lateTime}? Reply YES to confirm or NO to cancel.`, webhookUrl);
+        } else {
+          // Multiple sites — ask which site first, then log with the past time
+          pendingConfirmations[creatorId] = { type: 'late_checkin_multisite', assignments, name, lateTime, date, webhookUrl, timestamp: Date.now() };
+          const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
+          await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nWhich site were you arriving at? Reply with the number.`, webhookUrl);
+        }
+ 
       // --- Handle on site messages ---
-      if (isOnSiteMessage(cleanText)) {
+      } else if (isOnSiteMessage(cleanText)) {
         const assignments = await getScannersAssignments(name);
  
         if (assignments.length === 0) {
