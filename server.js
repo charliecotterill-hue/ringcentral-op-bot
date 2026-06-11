@@ -1,9 +1,8 @@
 const express = require('express');
 const { google } = require('googleapis');
-const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 app.use(express.json());
-
+ 
 const PORT = process.env.PORT || 3000;
 const INCOMING_WEBHOOK_URL = process.env.INCOMING_WEBHOOK_URL; // fallback for unknown channels
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
@@ -11,10 +10,7 @@ const SHEET_ID = process.env.SHEET_ID;
 const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
 const SLACK_EQUIPMENT_WEBHOOK_URL = process.env.SLACK_EQUIPMENT_WEBHOOK_URL; // Slack incoming webhook for equipment requests
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-// Comma-separated channel IDs where Cleo AI responses are enabled (whitelist bypassed for testing)
-const AI_ENABLED_CHANNEL_IDS = (process.env.AI_ENABLED_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-
+ 
 // Map of channel ID → allowed scanner RC user ID (only this person triggers the bot)
 const CHANNEL_SCANNERS = {
   '149401255942': '4840338044', // Soloman
@@ -39,7 +35,7 @@ const CHANNEL_SCANNERS = {
   '145034674182': '1092080045', // Omar
   '152342814726': '4936055044', // Louie
 };
-
+ 
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
 const SCANNER_NAMES = {
   '4840338044': 'Soloman',
@@ -64,7 +60,7 @@ const SCANNER_NAMES = {
   '1092080045': 'Omar',
   '4936055044': 'Louie',
 };
-
+ 
 // Map of channel ID → incoming webhook URL
 const CHANNEL_WEBHOOKS = {
   '149401255942': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNjk5NjA1NTMxIn0.3HUHXk4IHBBzueouCUWmjf5VP89bocP8BVhw6mI1LWM',
@@ -89,7 +85,7 @@ const CHANNEL_WEBHOOKS = {
   '145034674182': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDE3MjQzIn0.SlOMGvIk9vBLwC55tkR-Tvb4ABP4rfAuKszEEFKSO4E',
   '152342814726': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDU4MjAzIn0.y2H2fqj-byvd-0pi3Je0tmMWeONIMwd_nDDqPj4J9Pw',
 };
-
+ 
 // Set up Google Sheets authentication
 let googleAuth;
 try {
@@ -102,10 +98,10 @@ try {
 } catch (err) {
   console.error('Failed to configure Google auth:', err.message);
 }
-
+ 
 // In-memory store for pending site confirmations
 const pendingConfirmations = {};
-
+ 
 // Levenshtein distance — counts the minimum edits (insert, delete, substitute) to turn a into b
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -121,12 +117,12 @@ function levenshtein(a, b) {
   }
   return dp[m][n];
 }
-
+ 
 // Returns true if any single word in text is within maxDist edits of target
 function fuzzyWord(text, target, maxDist = 1) {
   return text.split(/\s+/).some(w => levenshtein(w, target) <= maxDist);
 }
-
+ 
 // Returns true if any consecutive sequence of words in text is within maxDist edits of phrase
 function fuzzyPhrase(text, phrase, maxDist = 1) {
   const words = text.split(/\s+/);
@@ -137,38 +133,38 @@ function fuzzyPhrase(text, phrase, maxDist = 1) {
   }
   return false;
 }
-
+ 
 // Detect equipment/kit requests from a scanner
 function isEquipmentRequestMessage(text) {
   const t = text.toLowerCase().trim();
-
+ 
   // Direct keyword
   if (/\bequipment\s+request\b/.test(t)) return true;
-
+ 
   // "need/want/require" + "new/replacement" anywhere nearby
   if (/\b(need|want|require|requesting|request)\b.{0,25}\b(new|replacement|replace|another)\b/.test(t)) return true;
   if (/\b(need|want|require)\b.{0,15}\b(ppe|gear|equipment|uniform|kit)\b/.test(t)) return true;
-
+ 
   // "my [item] is broken/damaged/worn/torn/lost/ripped"
   if (/\bmy\b.{0,25}\b(broken|damaged|worn|torn|lost|ripped|worn.?out|falling.?apart)\b/.test(t)) return true;
-
+ 
   // "[item] needs replacing"
   if (/\bneeds?\s+(replacing|replacement|to\s+be\s+replaced)\b/.test(t)) return true;
-
+ 
   // "can I get [new] [item]"
   if (/\bcan\s+i\s+(get|have|order)\b.{0,25}\b(new|replacement|some)?\b/.test(t) &&
       /\b(boots?|helmet|hard.?hat|vest|hi.?vis|gloves?|jacket|trousers?|ppe|uniform|scanner|tablet|device)\b/.test(t)) return true;
-
+ 
   // Common equipment items mentioned with damage/need indicators
   const items = ['boots?', 'helmet', 'hard.?hat', 'vest', 'hi.?vis', 'gloves?', 'jacket', 'trousers?', 'ppe', 'uniform', 'scanner', 'tablet', 'device'];
   for (const item of items) {
     if (new RegExp(`\\b(new|replacement|need|broken|damaged|worn|torn)\\b.{0,30}${item}\\b`).test(t)) return true;
     if (new RegExp(`\\b${item}\\b.{0,25}\\b(broken|damaged|worn|torn|replacement|replace|needed)`).test(t)) return true;
   }
-
+ 
   return false;
 }
-
+ 
 // Send a message to the equipment request Slack channel
 async function sendSlackEquipmentMessage(text) {
   if (!SLACK_EQUIPMENT_WEBHOOK_URL) {
@@ -187,7 +183,7 @@ async function sendSlackEquipmentMessage(text) {
     console.error('Error sending equipment request to Slack:', err.message);
   }
 }
-
+ 
 // Extract a HH:MM time string from a message (e.g. "10", "10:30", "9am", "10:30am")
 function extractMentionedTime(text) {
   const t = text.toLowerCase();
@@ -220,7 +216,7 @@ function extractMentionedTime(text) {
   }
   return null;
 }
-
+ 
 // Detect a late/forgotten check-in — scanner mentions a specific past arrival time with an apology/context hint
 function isLateCheckInMessage(text) {
   const t = text.toLowerCase().trim();
@@ -237,35 +233,35 @@ function isLateCheckInMessage(text) {
   if (!hasRetroPhrase) return false;
   return extractMentionedTime(t) !== null;
 }
-
+ 
 // Detect on site messages
 function isOnSiteMessage(text) {
   const t = text.toLowerCase().trim();
-
+ 
   // on site / onsite / on-site / on sight / on sit (common typos)
   // but not in future/conditional or negative context
   if (/\bon.?si(te?|ght)\b/.test(t) &&
     !/\b(when|once|until|will be|going to be|about to be|should be|if)\b.{0,20}on.?si(te?|ght)\b/.test(t) &&
     !/\b(not|no|never|wasn't|isn't|aren't|haven't|don't|doesn't|wont|won't|cant|can't)\b.{0,10}on.?si(te?|ght)\b/.test(t) &&
     !/\bon.?si(te?|ght)\b.{0,10}\b(yet|today)\b/.test(t)) return true;
-
+ 
   // at site / at the site
   if (/\bat\s+(the\s+)?site\b/.test(t)) return true;
-
+ 
   // clock in / clocking in / clocked in / clockin
   if (/\bcloc?k(ed|ing)?\s*in\b/.test(t)) return true;
-
+ 
   // arrived / arriving — but not when referring to past/other people, items, or deliveries
   if (/\barri?v+(ed|ing|es)?\b/.test(t) &&
     !/\b(yesterday|last\s+\w+|they|he|she|we|all|everything|it|the\s+\w+)\b.{0,20}\barri?v+/.test(t) &&
     !/\barri?v+(ed|ing|es)?\b.{0,20}\b(apart|except|but\s+not|minus)\b/.test(t)) return true;
-
+ 
   // "here" or "her" (typo) only when the entire message is just that word
   if (t === 'here' || t === 'her' || t === 'here now') return true;
-
+ 
   // arriving now / arriving on site etc.
   if (/\barriv(ing|al)\b/.test(t)) return true;
-
+ 
   // catch-all phrase list — matches anywhere in the message
   const onPhrases = [
     'on location', 'on-location',
@@ -276,7 +272,7 @@ function isOnSiteMessage(text) {
     'just pulled up', 'pulling up',
   ];
   if (onPhrases.some(p => t.includes(p))) return true;
-
+ 
   // Fuzzy matches — catches any of the key trigger words/phrases with one character off
   // fuzzyPhrase for 'on site' removed — covered by regex above which includes future/conditional exclusion
   if (fuzzyPhrase(t, 'at site'))     return true;
@@ -289,29 +285,29 @@ function isOnSiteMessage(text) {
     !/\b(yesterday|last\s+\w+|they|he|she|we|all|everything|it)\b.{0,20}\barriv/.test(t)) return true;
   if (fuzzyPhrase(t, 'on location')) return true;
   if (fuzzyPhrase(t, 'here now'))    return true;
-
+ 
   return false;
 }
-
+ 
 // Detect off site messages
 function isOffSiteMessage(text) {
   const t = text.toLowerCase().trim();
-
+ 
   // off site / offsite / off-site / off sight / off sit (common typos)
   if (/\boff.?si(te?|ght)\b/.test(t)) return true;
-
+ 
   // clock out / clocking out / clocked out / clockout
   if (/\bcloc?k(ed|ing)?\s*out\b/.test(t)) return true;
-
+ 
   // leaving / leavin (typo)
   if (/\bleav(ing|in)\b/.test(t)) return true;
-
+ 
   // finished — but not when followed by words suggesting mid-task context
   if (/\bfinish(ed|ing)?\b/.test(t) && !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an|last|this|each|every|that)\b/.test(t)) return true;
-
+ 
   // heading off / heading out / headin off / headng out
   if (/\bheadin+g?\s+(off|out)\b/.test(t)) return true;
-
+ 
   // catch-all phrase list — matches anywhere in the message
   const offPhrases = [
     'left site', 'left the site',
@@ -331,7 +327,7 @@ function isOffSiteMessage(text) {
     'heading home', 'going home',
   ];
   if (offPhrases.some(p => t.includes(p))) return true;
-
+ 
   // Fuzzy matches — catches any of the key trigger words/phrases with one character off
   if (fuzzyPhrase(t, 'off site'))     return true;
   if (fuzzyPhrase(t, 'left site'))    return true;
@@ -344,16 +340,16 @@ function isOffSiteMessage(text) {
   if (fuzzyWord(t,   'leaving'))      return true;
   // fuzzyWord for 'finished' removed — too many false positives in normal conversation
   if (fuzzyWord(t,   'wrapped'))      return true;
-
+ 
   // 'on my way' triggers unless followed by 'to the/a/an/office/hospital' etc. but NOT 'to site'
   if (t.includes('on my way')) {
     if (/\bon my way\s+to\s+site\b/.test(t)) return true;
     if (!/\bon my way\s+to\b/.test(t)) return true;
   }
-
+ 
   return false;
 }
-
+ 
 // Look up operative name — checks local map first, falls back to RC API
 async function getUserName(personId) {
   if (SCANNER_NAMES[String(personId)]) return SCANNER_NAMES[String(personId)];
@@ -372,23 +368,23 @@ async function getUserName(personId) {
   }
   return personId;
 }
-
+ 
 // Look up scanner's assignments for today from the Scanning Dashboard
 async function getScannersAssignments(firstName) {
   if (!googleAuth || !TRACKER_SHEET_ID) return [];
   try {
     const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' });
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
-
+ 
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: TRACKER_SHEET_ID,
       range: 'Scanning Dashboard!C5:H1000',
       valueRenderOption: 'FORMATTED_VALUE',
     });
-
+ 
     const rows = result.data.values || [];
     const assignments = [];
-
+ 
     for (let i = 0; i < rows.length; i++) {
       const row      = rows[i];
       const day      = row[1]; // D
@@ -396,7 +392,7 @@ async function getScannersAssignments(firstName) {
       const site     = row[3]; // F
       const employee = row[4]; // G
       const batch    = row[5]; // H
-
+ 
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
         employee && employee.toLowerCase().trim() === firstName.toLowerCase().trim()
@@ -406,7 +402,7 @@ async function getScannersAssignments(firstName) {
         assignments.push({ client: client || '', site: site || '', batch: batch || '', rowNumber: i + 5 });
       }
     }
-
+ 
     console.log(`Found ${assignments.length} assignment(s) for ${firstName} on ${dayOfWeek}`);
     return assignments;
   } catch (err) {
@@ -414,7 +410,7 @@ async function getScannersAssignments(firstName) {
     return [];
   }
 }
-
+ 
 // Tick a checkbox (TRUE) in the Scanning Dashboard for the given row and column letter
 async function tickCheckbox(rowNumber, col) {
   if (!googleAuth || !TRACKER_SHEET_ID) return;
@@ -431,7 +427,7 @@ async function tickCheckbox(rowNumber, col) {
     console.error(`Failed to tick checkbox at ${col}${rowNumber}:`, err.message);
   }
 }
-
+ 
 // Calculate hours and minutes between two HH:MM time strings
 function calcDuration(timeIn, timeOut) {
   const [inH, inM]   = timeIn.split(':').map(Number);
@@ -442,24 +438,24 @@ function calcDuration(timeIn, timeOut) {
   const mins  = diffMins % 60;
   return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 }
-
+ 
 // Append a check-in row to the Archive tab, inserting a two-row gap when the date changes
 async function logArchiveCheckIn(name, site, time, date) {
   if (!googleAuth || !SHEET_ID) return;
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
-
+ 
     // Read existing archive data (A:F — column F stores the actual sheet row number as a helper)
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: 'Archive!A:M',
     });
     const rows = existing.data.values || [];
-
+ 
     // Find the last data row by scanning backwards, skipping header (index 0)
     let lastDate = null;
     let lastSheetRow = 1; // default to header row (sheet row 1)
-
+ 
     for (let i = rows.length - 1; i >= 1; i--) {
       const row = rows[i];
       // Look for a row with an operative name in column C (index 2)
@@ -474,13 +470,13 @@ async function logArchiveCheckIn(name, site, time, date) {
         break;
       }
     }
-
+ 
     // Calculate the exact row to write to
     let nextRow = lastSheetRow + 1;
     if (lastDate && lastDate !== date) {
       nextRow += 2; // two-row visual gap between days
     }
-
+ 
     // Write directly to a specific row — no append, no surprises
     // Column F stores nextRow as a hidden helper so checkout can always find this row
     await sheets.spreadsheets.values.update({
@@ -494,7 +490,7 @@ async function logArchiveCheckIn(name, site, time, date) {
     console.error('Failed to log archive check-in:', err.message);
   }
 }
-
+ 
 // Update the matching check-in row in Archive with check-out time and total duration
 async function logArchiveCheckOut(name, site, timeOut, date) {
   if (!googleAuth || !SHEET_ID) return;
@@ -505,7 +501,7 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
       range: 'Archive!A:M',
     });
     const rows = result.data.values || [];
-
+ 
     // Collect ALL incomplete check-in rows for this scanner/site/date
     const matches = [];
     for (let i = 1; i < rows.length; i++) {
@@ -513,7 +509,7 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
       const rowDate = row[0] ? String(row[0]).trim() : '';
       const rowName = row[2] ? String(row[2]).trim() : '';
       const rowD    = row[3] ? String(row[3]) : '';
-
+ 
       if (
         rowDate === date &&
         rowName === name &&
@@ -525,12 +521,12 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
         matches.push({ sheetRow, timeIn });
       }
     }
-
+ 
     if (matches.length === 0) {
       console.log(`No matching Archive check-in found for ${name} at ${site} today`);
       return;
     }
-
+ 
     // Update all matching rows with the check-out time and duration
     for (const { sheetRow, timeIn } of matches) {
       const duration = timeIn ? calcDuration(timeIn, timeOut) : '—';
@@ -546,7 +542,7 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
     console.error('Failed to log archive check-out:', err.message);
   }
 }
-
+ 
 // Check if scanner already has a completed visit (timeIn + timeOut) for this site today
 async function checkCompletedEntry(name, site, date) {
   if (!googleAuth || !SHEET_ID) return null;
@@ -569,7 +565,7 @@ async function checkCompletedEntry(name, site, date) {
     return null;
   }
 }
-
+ 
 // Log on site check-in to the On Site Google Sheet
 async function logOnSite(name, site, batch, time, date) {
   if (!googleAuth || !SHEET_ID) {
@@ -578,7 +574,7 @@ async function logOnSite(name, site, batch, time, date) {
   }
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
-
+ 
     // Check if it's a new day — if so, clear previous data
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
@@ -592,7 +588,7 @@ async function logOnSite(name, site, batch, time, date) {
       });
       console.log('New day detected — cleared previous entries');
     }
-
+ 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: 'Sheet1!A:E',
@@ -604,7 +600,7 @@ async function logOnSite(name, site, batch, time, date) {
     console.error('Failed to log to Google Sheets:', err.message);
   }
 }
-
+ 
 // Log off site time in the same row as the on site entry
 async function logOffSite(name, site, time, date) {
   if (!googleAuth || !SHEET_ID) {
@@ -613,15 +609,15 @@ async function logOffSite(name, site, time, date) {
   }
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
-
+ 
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: 'Sheet1!A2:F1000',
     });
-
+ 
     const rows = result.data.values || [];
     let matchRowIndex = -1;
-
+ 
     for (let i = 0; i < rows.length; i++) {
       const [rowDate, , rowName, rowSite, , rowTimeOut] = rows[i];
       const siteMatch = site ? rowSite === site : true;
@@ -630,12 +626,12 @@ async function logOffSite(name, site, time, date) {
         break;
       }
     }
-
+ 
     if (matchRowIndex === -1) {
       console.log(`No matching on site entry for ${name} today`);
       return;
     }
-
+ 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: `Sheet1!F${matchRowIndex}`,
@@ -647,65 +643,33 @@ async function logOffSite(name, site, time, date) {
     console.error('Failed to log off site:', err.message);
   }
 }
-
-// Set up Anthropic client for Cleo AI responses
-let anthropicClient;
-if (ANTHROPIC_API_KEY) {
-  anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-  console.log('Anthropic client configured — Cleo AI enabled');
-} else {
-  console.log('ANTHROPIC_API_KEY not set — Cleo AI responses disabled');
-}
-
-// Get a Cleo AI response for a general message from a scanner
-async function getCleoResponse(message, senderName) {
-  if (!anthropicClient) return null;
-  try {
-    const response = await anthropicClient.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: `You are Cleo, a friendly and helpful operations assistant for a team of scanning operatives.
-You support field workers who travel to sites to carry out scanning work.
-Your job is to help them with questions, give helpful advice, and be a supportive point of contact.
-Keep responses concise and friendly — these are quick chat messages, not essays.
-You do not handle check-ins or check-outs (that is handled automatically).
-If someone asks about equipment, tell them to say "I need new [item]" and you'll sort the request.
-If someone asks about their schedule, remind them their ops team manages that.
-The person you're speaking to is a field scanning operative named ${senderName}.`,
-      messages: [{ role: 'user', content: message }],
-    });
-    return response.content[0].text;
-  } catch (err) {
-    console.error('Cleo AI error:', err.message);
-    return null;
-  }
-}
-
+ 
+ 
 app.get('/', (req, res) => res.send('Bot is running'));
-
+ 
 // Slack webhook endpoint — handles URL verification and upload complete events
 app.post('/slack-webhook', async (req, res) => {
   const body = req.body;
-
+ 
   // Slack URL verification challenge
   if (body.type === 'url_verification') {
     return res.json({ challenge: body.challenge });
   }
-
+ 
   // Handle message events — only process upload complete notifications
   if (body.event && body.event.type === 'message' && body.event.text) {
     const text = body.event.text;
-
+ 
     // Only trigger on "complete" messages, not "commenced"
     if (!text.toLowerCase().includes('complete')) {
       return res.status(200).send();
     }
-
+ 
     // Extract site code (e.g. turner_nycfcstadium)
     const siteMatch = text.match(/complete for ([a-z0-9_]+)\./i);
     // Extract dashboard row identifier number
     const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
-
+ 
     if (siteMatch && rowMatch) {
       const fullCode = siteMatch[1].toLowerCase();
       // Use only the part after the underscore (e.g. cw_onenorthquay → onenorthquay)
@@ -715,16 +679,16 @@ app.post('/slack-webhook', async (req, res) => {
       await updatePSTUploadComplete(slackSiteCode, batchNumber);
     }
   }
-
+ 
   res.status(200).send();
 });
-
+ 
 // Look up site name from Site Setup tab and update column J on Scanning Dashboard
 async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
   if (!googleAuth || !TRACKER_SHEET_ID) return;
   try {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
-
+ 
     // Step 1: Look up the site code in Site Setup tab (Column A = code, Column B = PST name)
     const siteSetup = await sheets.spreadsheets.values.get({
       spreadsheetId: TRACKER_SHEET_ID,
@@ -744,7 +708,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
       return;
     }
     console.log(`Matched site code ${slackSiteCode} → ${pstSiteName}`);
-
+ 
     // Step 2: Find matching row in Scanning Dashboard (column D = day, column F = site, column H = batch number)
     const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' });
     const dashboard = await sheets.spreadsheets.values.get({
@@ -771,7 +735,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
       console.log(`No Scanning Dashboard row found for ${pstSiteName} batch ${batchNumber}`);
       return;
     }
-
+ 
     // Step 3: Update column J to 1 (upload complete)
     await sheets.spreadsheets.values.update({
       spreadsheetId: TRACKER_SHEET_ID,
@@ -784,7 +748,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
     console.error('Failed to update PST upload complete:', err.message);
   }
 }
-
+ 
 app.post('/webhook', async (req, res) => {
   const validationToken = req.headers['validation-token'];
   if (validationToken) {
@@ -792,26 +756,26 @@ app.post('/webhook', async (req, res) => {
     res.setHeader('Validation-Token', validationToken);
     return res.status(200).send();
   }
-
+ 
   const event = req.body;
-
+ 
   if (event && event.body && event.body.text !== undefined) {
     const text = event.body.text;
     const creatorId = event.body.creatorId;
     const groupId = event.body.groupId;
     const webhookUrl = CHANNEL_WEBHOOKS[groupId] || INCOMING_WEBHOOK_URL;
     console.log(`Message received — groupId: ${groupId}, creatorId: ${creatorId}`);
-
+ 
     // Ignore messages with no sender (e.g. incoming webhook posts from the bot itself)
     if (!creatorId) {
       return res.status(200).send();
     }
-
+ 
     // Ignore bot's own messages
     if (BOT_OWNER_ID && creatorId === BOT_OWNER_ID) {
       return res.status(200).send();
     }
-
+ 
     // Ignore bot confirmation/question messages
     if (text && (
       text.trim().startsWith('✅') ||
@@ -824,22 +788,22 @@ app.post('/webhook', async (req, res) => {
     )) {
       return res.status(200).send();
     }
-
+ 
     if (text && text.trim()) {
       const cleanText = text.trim();
       const now = new Date();
       const date = now.toLocaleDateString('en-GB', { timeZone: 'Europe/London' });
       const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-
+ 
       // --- Handle pending site confirmation (scanner replied with a number) ---
       if (pendingConfirmations[creatorId]) {
         const pending = pendingConfirmations[creatorId];
-
+ 
         // Expire pending confirmations older than 30 minutes
         if (Date.now() - pending.timestamp > 30 * 60 * 1000) {
           delete pendingConfirmations[creatorId];
         } else {
-
+ 
         // --- Equipment request multi-step flow ---
         if (pending.type === 'equipment_item') {
           // Scanner has replied with the item they need
@@ -847,19 +811,19 @@ app.post('/webhook', async (req, res) => {
           delete pendingConfirmations[creatorId];
           pendingConfirmations[creatorId] = { type: 'equipment_size', name: pending.name, item, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
           await sendMessage(`What size do you need? (Reply N/A if not applicable)`, pending.webhookUrl);
-
+ 
         } else if (pending.type === 'equipment_size') {
           const size = cleanText;
           delete pendingConfirmations[creatorId];
           pendingConfirmations[creatorId] = { type: 'equipment_address', name: pending.name, item: pending.item, size, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
           await sendMessage(`What address should we send it to?`, pending.webhookUrl);
-
+ 
         } else if (pending.type === 'equipment_address') {
           const address = cleanText;
           delete pendingConfirmations[creatorId];
           pendingConfirmations[creatorId] = { type: 'equipment_notes', name: pending.name, item: pending.item, size: pending.size, address, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
           await sendMessage(`Any additional notes? (Reply NONE if nothing to add)`, pending.webhookUrl);
-
+ 
         } else if (pending.type === 'equipment_notes') {
           const notes = cleanText.toLowerCase() === 'none' ? '—' : cleanText;
           delete pendingConfirmations[creatorId];
@@ -874,7 +838,7 @@ app.post('/webhook', async (req, res) => {
           ].join('\n');
           await sendSlackEquipmentMessage(slackText);
           await sendMessage(`✅ Equipment request submitted! We'll get that sorted for you, ${pending.name}.`, pending.webhookUrl);
-
+ 
         // --- YES/NO responses (duplicate_checkin or late_checkin) ---
         } else if (pending.type === 'duplicate_checkin' || pending.type === 'late_checkin') {
           const reply = cleanText.toLowerCase().trim();
@@ -888,7 +852,7 @@ app.post('/webhook', async (req, res) => {
           } else {
             await sendMessage(`No problem, not recorded.`, pending.webhookUrl);
           }
-
+ 
         // --- Numeric choice for multi-site late check-in ---
         } else if (pending.type === 'late_checkin_multisite') {
           const choice = parseInt(cleanText);
@@ -902,7 +866,7 @@ app.post('/webhook', async (req, res) => {
           } else {
             await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
           }
-
+ 
         // --- Numeric choice for regular multi-site on/off-site ---
         } else {
           const choice = parseInt(cleanText);
@@ -924,26 +888,24 @@ app.post('/webhook', async (req, res) => {
             await sendMessage(`Please reply with a number between 1 and ${pending.assignments.length}.`, pending.webhookUrl);
           }
         } // end confirmation type handling
-
+ 
           return res.status(200).send(); // handled — stop processing
         } // end of non-expired confirmation block
         // If confirmation was expired it was just deleted above — fall through to normal handlers
       }
-
+ 
       // --- Whitelist check: only respond to the assigned scanner for this channel ---
-      // AI-enabled channels bypass the whitelist (for testing / conversational use)
-      const isAiChannel = AI_ENABLED_CHANNEL_IDS.includes(groupId);
       const allowedScannerId = CHANNEL_SCANNERS[groupId];
-      if (!isAiChannel && allowedScannerId && String(creatorId) !== String(allowedScannerId)) {
+      if (allowedScannerId && String(creatorId) !== String(allowedScannerId)) {
         return res.status(200).send();
       }
       const name = await getUserName(creatorId);
-
+ 
       // --- Handle late/forgotten check-in (scanner mentions they arrived at a past time) ---
       if (isLateCheckInMessage(cleanText)) {
         const lateTime = extractMentionedTime(cleanText.toLowerCase());
         const assignments = await getScannersAssignments(name);
-
+ 
         if (assignments.length === 0) {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
@@ -956,16 +918,16 @@ app.post('/webhook', async (req, res) => {
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nWhich site were you arriving at? Reply with the number.`, webhookUrl);
         }
-
+ 
       // --- Handle on site messages ---
       } else if (isOnSiteMessage(cleanText)) {
         const assignments = await getScannersAssignments(name);
-
+ 
         if (assignments.length === 0) {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
           const { site, batch, rowNumber } = assignments[0];
-
+ 
           // Check if scanner already has a completed visit for this site today
           const completed = await checkCompletedEntry(name, site, date);
           if (completed) {
@@ -983,12 +945,12 @@ app.post('/webhook', async (req, res) => {
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're arriving at.`, webhookUrl);
         }
-
-
+ 
+ 
       // --- Handle off site messages ---
       } else if (isOffSiteMessage(cleanText)) {
         const assignments = await getScannersAssignments(name);
-
+ 
         if (assignments.length === 0) {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
@@ -1003,25 +965,19 @@ app.post('/webhook', async (req, res) => {
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`, webhookUrl);
         }
-
+ 
       // --- Handle equipment requests ---
       } else if (isEquipmentRequestMessage(cleanText)) {
         pendingConfirmations[creatorId] = { type: 'equipment_item', name, webhookUrl, timestamp: Date.now() };
         await sendMessage(`Hi ${name}, I've picked up your equipment request. What equipment do you need? Please describe the item (e.g. 'steel toe cap boots', 'hi-vis vest').`, webhookUrl);
-
-      // --- Cleo AI fallback (only in AI-enabled channels) ---
-      } else if (isAiChannel) {
-        const cleoReply = await getCleoResponse(cleanText, name);
-        if (cleoReply) {
-          await sendMessage(cleoReply, webhookUrl);
-        }
+ 
       }
     }
   }
-
+ 
   res.status(200).send();
 });
-
+ 
 async function sendMessage(text, webhookUrl) {
   const url = webhookUrl || INCOMING_WEBHOOK_URL;
   if (!url) return;
@@ -1037,5 +993,5 @@ async function sendMessage(text, webhookUrl) {
     console.error('Error sending message:', err.message);
   }
 }
-
+ 
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
