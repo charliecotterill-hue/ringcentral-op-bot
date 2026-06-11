@@ -1,5 +1,6 @@
 const express = require('express');
 const { google } = require('googleapis');
+const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 app.use(express.json());
  
@@ -9,6 +10,10 @@ const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
 const SHEET_ID = process.env.SHEET_ID;
 const TRACKER_SHEET_ID = process.env.TRACKER_SHEET_ID;
 const RC_BOT_TOKEN = process.env.RC_BOT_TOKEN;
+const SLACK_EQUIPMENT_WEBHOOK_URL = process.env.SLACK_EQUIPMENT_WEBHOOK_URL; // Slack incoming webhook for equipment requests
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// Comma-separated channel IDs where Cleo AI responses are enabled (whitelist bypassed for testing)
+const AI_ENABLED_CHANNEL_IDS = (process.env.AI_ENABLED_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
  
 // Map of channel ID → allowed scanner RC user ID (only this person triggers the bot)
 const CHANNEL_SCANNERS = {
@@ -133,6 +138,56 @@ function fuzzyPhrase(text, phrase, maxDist = 1) {
   return false;
 }
  
+// Detect equipment/kit requests from a scanner
+function isEquipmentRequestMessage(text) {
+  const t = text.toLowerCase().trim();
+ 
+  // Direct keyword
+  if (/\bequipment\s+request\b/.test(t)) return true;
+ 
+  // "need/want/require" + "new/replacement" anywhere nearby
+  if (/\b(need|want|require|requesting|request)\b.{0,25}\b(new|replacement|replace|another)\b/.test(t)) return true;
+  if (/\b(need|want|require)\b.{0,15}\b(ppe|gear|equipment|uniform|kit)\b/.test(t)) return true;
+ 
+  // "my [item] is broken/damaged/worn/torn/lost/ripped"
+  if (/\bmy\b.{0,25}\b(broken|damaged|worn|torn|lost|ripped|worn.?out|falling.?apart)\b/.test(t)) return true;
+ 
+  // "[item] needs replacing"
+  if (/\bneeds?\s+(replacing|replacement|to\s+be\s+replaced)\b/.test(t)) return true;
+ 
+  // "can I get [new] [item]"
+  if (/\bcan\s+i\s+(get|have|order)\b.{0,25}\b(new|replacement|some)?\b/.test(t) &&
+      /\b(boots?|helmet|hard.?hat|vest|hi.?vis|gloves?|jacket|trousers?|ppe|uniform|scanner|tablet|device)\b/.test(t)) return true;
+ 
+  // Common equipment items mentioned with damage/need indicators
+  const items = ['boots?', 'helmet', 'hard.?hat', 'vest', 'hi.?vis', 'gloves?', 'jacket', 'trousers?', 'ppe', 'uniform', 'scanner', 'tablet', 'device'];
+  for (const item of items) {
+    if (new RegExp(`\\b(new|replacement|need|broken|damaged|worn|torn)\\b.{0,30}${item}\\b`).test(t)) return true;
+    if (new RegExp(`\\b${item}\\b.{0,25}\\b(broken|damaged|worn|torn|replacement|replace|needed)`).test(t)) return true;
+  }
+ 
+  return false;
+}
+ 
+// Send a message to the equipment request Slack channel
+async function sendSlackEquipmentMessage(text) {
+  if (!SLACK_EQUIPMENT_WEBHOOK_URL) {
+    console.log('SLACK_EQUIPMENT_WEBHOOK_URL not set — equipment request not forwarded to Slack');
+    return;
+  }
+  try {
+    const response = await fetch(SLACK_EQUIPMENT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!response.ok) console.error('Slack equipment send failed:', await response.text());
+    else console.log('Equipment request sent to Slack');
+  } catch (err) {
+    console.error('Error sending equipment request to Slack:', err.message);
+  }
+}
+ 
 // Extract a HH:MM time string from a message (e.g. "10", "10:30", "9am", "10:30am")
 function extractMentionedTime(text) {
   const t = text.toLowerCase();
@@ -200,8 +255,10 @@ function isOnSiteMessage(text) {
   // clock in / clocking in / clocked in / clockin
   if (/\bcloc?k(ed|ing)?\s*in\b/.test(t)) return true;
  
-  // arrived / arriving — but not when referring to past/other people e.g. "arrived yesterday", "they all arrived"
-  if (/\barri?v+(ed|ing|es)?\b/.test(t) && !/\b(yesterday|last\s+\w+|they|he|she|we|all)\b.{0,20}\barri?v+/.test(t)) return true;
+  // arrived / arriving — but not when referring to past/other people, items, or deliveries
+  if (/\barri?v+(ed|ing|es)?\b/.test(t) &&
+    !/\b(yesterday|last\s+\w+|they|he|she|we|all|everything|it|the\s+\w+)\b.{0,20}\barri?v+/.test(t) &&
+    !/\barri?v+(ed|ing|es)?\b.{0,20}\b(apart|except|but\s+not|minus)\b/.test(t)) return true;
  
   // "here" or "her" (typo) only when the entire message is just that word
   if (t === 'here' || t === 'her' || t === 'here now') return true;
@@ -225,8 +282,11 @@ function isOnSiteMessage(text) {
   if (fuzzyPhrase(t, 'at site'))     return true;
   if (fuzzyPhrase(t, 'clock in'))    return true;
   if (fuzzyPhrase(t, 'clocking in')) return true;
-  if (fuzzyWord(t,   'arrived'))     return true;
-  if (fuzzyWord(t,   'arriving'))    return true;
+  if (fuzzyWord(t, 'arrived') &&
+    !/\b(yesterday|last\s+\w+|they|he|she|we|all|everything|it)\b.{0,20}\barri?v+/.test(t) &&
+    !/\barri?v+(ed|ing|es)?\b.{0,20}\b(apart|except|but\s+not|minus)\b/.test(t)) return true;
+  if (fuzzyWord(t, 'arriving') &&
+    !/\b(yesterday|last\s+\w+|they|he|she|we|all|everything|it)\b.{0,20}\barriv/.test(t)) return true;
   if (fuzzyPhrase(t, 'on location')) return true;
   if (fuzzyPhrase(t, 'here now'))    return true;
  
@@ -588,6 +648,39 @@ async function logOffSite(name, site, time, date) {
   }
 }
  
+// Set up Anthropic client for Cleo AI responses
+let anthropicClient;
+if (ANTHROPIC_API_KEY) {
+  anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  console.log('Anthropic client configured — Cleo AI enabled');
+} else {
+  console.log('ANTHROPIC_API_KEY not set — Cleo AI responses disabled');
+}
+ 
+// Get a Cleo AI response for a general message from a scanner
+async function getCleoResponse(message, senderName) {
+  if (!anthropicClient) return null;
+  try {
+    const response = await anthropicClient.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      system: `You are Cleo, a friendly and helpful operations assistant for a team of scanning operatives.
+You support field workers who travel to sites to carry out scanning work.
+Your job is to help them with questions, give helpful advice, and be a supportive point of contact.
+Keep responses concise and friendly — these are quick chat messages, not essays.
+You do not handle check-ins or check-outs (that is handled automatically).
+If someone asks about equipment, tell them to say "I need new [item]" and you'll sort the request.
+If someone asks about their schedule, remind them their ops team manages that.
+The person you're speaking to is a field scanning operative named ${senderName}.`,
+      messages: [{ role: 'user', content: message }],
+    });
+    return response.content[0].text;
+  } catch (err) {
+    console.error('Cleo AI error:', err.message);
+    return null;
+  }
+}
+ 
 app.get('/', (req, res) => res.send('Bot is running'));
  
 // Slack webhook endpoint — handles URL verification and upload complete events
@@ -720,7 +813,15 @@ app.post('/webhook', async (req, res) => {
     }
  
     // Ignore bot confirmation/question messages
-    if (text && (text.trim().startsWith('✅') || text.trim().startsWith('⚠️') || text.trim().startsWith('Hi ') || text.trim().startsWith('Please reply'))) {
+    if (text && (
+      text.trim().startsWith('✅') ||
+      text.trim().startsWith('⚠️') ||
+      text.trim().startsWith('Hi ') ||
+      text.trim().startsWith('Please reply') ||
+      text.trim().startsWith('What size') ||
+      text.trim().startsWith('What address') ||
+      text.trim().startsWith('Any additional notes')
+    )) {
       return res.status(200).send();
     }
  
@@ -739,8 +840,43 @@ app.post('/webhook', async (req, res) => {
           delete pendingConfirmations[creatorId];
         } else {
  
+        // --- Equipment request multi-step flow ---
+        if (pending.type === 'equipment_item') {
+          // Scanner has replied with the item they need
+          const item = cleanText;
+          delete pendingConfirmations[creatorId];
+          pendingConfirmations[creatorId] = { type: 'equipment_size', name: pending.name, item, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
+          await sendMessage(`What size do you need? (Reply N/A if not applicable)`, pending.webhookUrl);
+ 
+        } else if (pending.type === 'equipment_size') {
+          const size = cleanText;
+          delete pendingConfirmations[creatorId];
+          pendingConfirmations[creatorId] = { type: 'equipment_address', name: pending.name, item: pending.item, size, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
+          await sendMessage(`What address should we send it to?`, pending.webhookUrl);
+ 
+        } else if (pending.type === 'equipment_address') {
+          const address = cleanText;
+          delete pendingConfirmations[creatorId];
+          pendingConfirmations[creatorId] = { type: 'equipment_notes', name: pending.name, item: pending.item, size: pending.size, address, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
+          await sendMessage(`Any additional notes? (Reply NONE if nothing to add)`, pending.webhookUrl);
+ 
+        } else if (pending.type === 'equipment_notes') {
+          const notes = cleanText.toLowerCase() === 'none' ? '—' : cleanText;
+          delete pendingConfirmations[creatorId];
+          // Build and send Slack message
+          const slackText = [
+            `🔧 *Equipment Request*`,
+            `*Scanner:* ${pending.name}`,
+            `*Item:* ${pending.item}`,
+            `*Size:* ${pending.size}`,
+            `*Delivery Address:* ${pending.address}`,
+            `*Notes:* ${notes}`,
+          ].join('\n');
+          await sendSlackEquipmentMessage(slackText);
+          await sendMessage(`✅ Equipment request submitted! We'll get that sorted for you, ${pending.name}.`, pending.webhookUrl);
+ 
         // --- YES/NO responses (duplicate_checkin or late_checkin) ---
-        if (pending.type === 'duplicate_checkin' || pending.type === 'late_checkin') {
+        } else if (pending.type === 'duplicate_checkin' || pending.type === 'late_checkin') {
           const reply = cleanText.toLowerCase().trim();
           delete pendingConfirmations[creatorId];
           if (reply === 'yes' || reply === 'y') {
@@ -789,13 +925,16 @@ app.post('/webhook', async (req, res) => {
           }
         } // end confirmation type handling
  
+          return res.status(200).send(); // handled — stop processing
         } // end of non-expired confirmation block
-        return res.status(200).send();
+        // If confirmation was expired it was just deleted above — fall through to normal handlers
       }
  
       // --- Whitelist check: only respond to the assigned scanner for this channel ---
+      // AI-enabled channels bypass the whitelist (for testing / conversational use)
+      const isAiChannel = AI_ENABLED_CHANNEL_IDS.includes(groupId);
       const allowedScannerId = CHANNEL_SCANNERS[groupId];
-      if (allowedScannerId && String(creatorId) !== String(allowedScannerId)) {
+      if (!isAiChannel && allowedScannerId && String(creatorId) !== String(allowedScannerId)) {
         return res.status(200).send();
       }
       const name = await getUserName(creatorId);
@@ -864,6 +1003,18 @@ app.post('/webhook', async (req, res) => {
           const list = assignments.map((a, i) => `${i + 1}. ${a.site} — ${a.batch}`).join('\n');
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`, webhookUrl);
         }
+ 
+      // --- Handle equipment requests ---
+      } else if (isEquipmentRequestMessage(cleanText)) {
+        pendingConfirmations[creatorId] = { type: 'equipment_item', name, webhookUrl, timestamp: Date.now() };
+        await sendMessage(`Hi ${name}, I've picked up your equipment request. What equipment do you need? Please describe the item (e.g. 'steel toe cap boots', 'hi-vis vest').`, webhookUrl);
+ 
+      // --- Cleo AI fallback (only in AI-enabled channels) ---
+      } else if (isAiChannel) {
+        const cleoReply = await getCleoResponse(cleanText, name);
+        if (cleoReply) {
+          await sendMessage(cleoReply, webhookUrl);
+        }
       }
     }
   }
@@ -888,3 +1039,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
