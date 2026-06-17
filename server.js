@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { google } = require('googleapis');
 const app = express();
@@ -34,6 +35,9 @@ const CHANNEL_SCANNERS = {
   '148071874566': '4781541044', // Sa'ad
   '145034674182': '1092080045', // Omar
   '152342814726': '4936055044', // Louie
+  '158565171206': '7454948044', // George
+  '156654592006': '5058918044', // Rahat
+  '159333703686': '4064968020', // Muhammad Umar
 };
  
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -59,6 +63,9 @@ const SCANNER_NAMES = {
   '4781541044': "Sa'ad",
   '1092080045': 'Omar',
   '4936055044': 'Louie',
+  '7454948044': 'George',
+  '5058918044': 'Rahat',
+  '4064968020': 'Muhammad Umar',
 };
  
 // Map of channel ID → incoming webhook URL
@@ -84,6 +91,9 @@ const CHANNEL_WEBHOOKS = {
   '148071874566': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDMzNjI3In0.vuSpdbHMIAufVtzFFDxJQY1mtPp1LrmSfy2sptFHAVY',
   '145034674182': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDE3MjQzIn0.SlOMGvIk9vBLwC55tkR-Tvb4ABP4rfAuKszEEFKSO4E',
   '152342814726': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzNzM5MDU4MjAzIn0.y2H2fqj-byvd-0pi3Je0tmMWeONIMwd_nDDqPj4J9Pw',
+  '158565171206': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA3NTE4NzQ3In0.ASPAbCuxEVyxgm-Hc3BmFlPb27aiFWDMgonvOVmmsXY',
+  '156654592006': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5MzcwMTM5In0.G5624hu_TZRKxpUOUuhcWk1AqG2Vg43EK8scng9zItg',
+  '159333703686': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5Mzc4MzMxIn0.tohzWoE2jhvgyMBrIVme1JgzlYvPzUWWLeiEALFS5hA',
 };
  
 // Set up Google Sheets authentication
@@ -718,19 +728,39 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
     });
     const dashRows = dashboard.data.values || [];
     let matchRow = -1;
+ 
+    // First pass: match on day + site + batch (most precise)
     for (let i = 0; i < dashRows.length; i++) {
       const day   = dashRows[i][1]; // Column D
       const site  = dashRows[i][3]; // Column F
       const batch = dashRows[i][5]; // Column H
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
-        site && site.trim() === pstSiteName.trim() &&
-        batch && batch.toString().includes(batchNumber)
+        site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
+        batch && batch.toString().trim().includes(batchNumber)
       ) {
-        matchRow = i + 5; // Row 5 is the first data row
+        matchRow = i + 5;
         break;
       }
     }
+ 
+    // Second pass: if no day match (e.g. upload arrived overnight), match on site + batch only
+    if (matchRow === -1) {
+      console.log(`No day match found for ${pstSiteName} batch ${batchNumber} on ${dayOfWeek} — trying without day filter`);
+      for (let i = 0; i < dashRows.length; i++) {
+        const site  = dashRows[i][3]; // Column F
+        const batch = dashRows[i][5]; // Column H
+        if (
+          site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
+          batch && batch.toString().trim().includes(batchNumber)
+        ) {
+          matchRow = i + 5;
+          console.log(`Fallback match found at row ${matchRow} without day filter`);
+          break;
+        }
+      }
+    }
+ 
     if (matchRow === -1) {
       console.log(`No Scanning Dashboard row found for ${pstSiteName} batch ${batchNumber}`);
       return;
@@ -839,16 +869,23 @@ app.post('/webhook', async (req, res) => {
           await sendSlackEquipmentMessage(slackText);
           await sendMessage(`✅ Equipment request submitted! We'll get that sorted for you, ${pending.name}.`, pending.webhookUrl);
  
-        // --- YES/NO responses (duplicate_checkin or late_checkin) ---
-        } else if (pending.type === 'duplicate_checkin' || pending.type === 'late_checkin') {
+        // --- YES/NO responses (duplicate_checkin, duplicate_checkout, or late_checkin) ---
+        } else if (pending.type === 'duplicate_checkin' || pending.type === 'duplicate_checkout' || pending.type === 'late_checkin') {
           const reply = cleanText.toLowerCase().trim();
           delete pendingConfirmations[creatorId];
           if (reply === 'yes' || reply === 'y') {
-            const checkInTime = pending.type === 'late_checkin' ? pending.lateTime : pending.time;
-            await logOnSite(pending.name, pending.site, pending.batch, checkInTime, pending.date);
-            await logArchiveCheckIn(pending.name, pending.site, checkInTime, pending.date);
-            await tickCheckbox(pending.rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${pending.name} at ${pending.site}${pending.batch ? ` (${pending.batch})` : ''} at ${checkInTime}`, pending.webhookUrl);
+            if (pending.type === 'duplicate_checkout') {
+              await logOffSite(pending.name, pending.site, pending.time, pending.date);
+              await logArchiveCheckOut(pending.name, pending.site, pending.time, pending.date);
+              await tickCheckbox(pending.rowNumber, 'M');
+              await sendMessage(`✅ Check-out recorded for ${pending.name} at ${pending.site} at ${pending.time}`, pending.webhookUrl);
+            } else {
+              const checkInTime = pending.type === 'late_checkin' ? pending.lateTime : pending.time;
+              await logOnSite(pending.name, pending.site, pending.batch, checkInTime, pending.date);
+              await logArchiveCheckIn(pending.name, pending.site, checkInTime, pending.date);
+              await tickCheckbox(pending.rowNumber, 'L');
+              await sendMessage(`✅ Check-in recorded for ${pending.name} at ${pending.site}${pending.batch ? ` (${pending.batch})` : ''} at ${checkInTime}`, pending.webhookUrl);
+            }
           } else {
             await sendMessage(`No problem, not recorded.`, pending.webhookUrl);
           }
@@ -955,10 +992,18 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`⚠️ Hi ${name}, I couldn't find your schedule for today. Please contact your ops team.`, webhookUrl);
         } else if (assignments.length === 1) {
           const { site, rowNumber } = assignments[0];
-          await logOffSite(name, site, time, date);
-          await logArchiveCheckOut(name, site, time, date);
-          await tickCheckbox(rowNumber, 'M');
-          await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`, webhookUrl);
+ 
+          // Check if scanner has already checked out of this site today
+          const completed = await checkCompletedEntry(name, site, date);
+          if (completed) {
+            pendingConfirmations[creatorId] = { type: 'duplicate_checkout', name, site, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
+            await sendMessage(`Hi ${name}, it looks like you already checked out of ${site} today (checked out at ${completed.timeOut}). Would you like to log another check-out? Reply YES to confirm or NO to cancel.`, webhookUrl);
+          } else {
+            await logOffSite(name, site, time, date);
+            await logArchiveCheckOut(name, site, time, date);
+            await tickCheckbox(rowNumber, 'M');
+            await sendMessage(`✅ Check-out recorded for ${name} at ${site} at ${time}`, webhookUrl);
+          }
         } else {
           // Multiple sites — ask which one they're leaving
           pendingConfirmations[creatorId] = { type: 'offsite', assignments, name, time, date, webhookUrl, timestamp: Date.now() };
@@ -995,3 +1040,4 @@ async function sendMessage(text, webhookUrl) {
 }
  
 app.listen(PORT, () => console.log(`Bot running on port ${PORT}`));
+ 
