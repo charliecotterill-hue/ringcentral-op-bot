@@ -152,7 +152,10 @@ function isEquipmentRequestMessage(text) {
 
   // "need/want/require" + "new/replacement" anywhere nearby
   if (/\b(need|want|require|requesting|request)\b.{0,25}\b(new|replacement|replace|another)\b/.test(t)) return true;
-  if (/\b(need|want|require)\b.{0,15}\b(ppe|gear|equipment|uniform|kit)\b/.test(t)) return true;
+  if (/\b(need|want|require|get|have|order)\b.{0,15}\b(ppe|gear|equipment|uniform|kit)\b/.test(t)) return true;
+
+  // "could/can I get/have/order a [item]" — catches polite requests without "new"
+  if (/\b(can|could)\s+i\b.{0,20}\b(get|have|order|request)\b/.test(t)) return true;
 
   // "my [item] is broken/damaged/worn/torn/lost/ripped"
   if (/\bmy\b.{0,25}\b(broken|damaged|worn|torn|lost|ripped|worn.?out|falling.?apart)\b/.test(t)) return true;
@@ -165,7 +168,13 @@ function isEquipmentRequestMessage(text) {
       /\b(boots?|helmet|hard.?hat|vest|hi.?vis|gloves?|jacket|trousers?|ppe|uniform|scanner|tablet|device)\b/.test(t)) return true;
 
   // Common equipment items mentioned with damage/need indicators
-  const items = ['boots?', 'helmet', 'hard.?hat', 'vest', 'hi.?vis', 'gloves?', 'jacket', 'trousers?', 'ppe', 'uniform', 'scanner', 'tablet', 'device'];
+  const items = [
+    'boots?', 'helmet', 'hard.?hat', 'vest', 'hi.?vis', 'gloves?', 'jacket', 'trousers?',
+    'ppe', 'uniform', 'scanner', 'tablet', 'device', 'laptop', 'phone',
+    'battery.?pack', 'battery', 'charger', 'charging.?cable', 'cable',
+    'tripod', 'hard.?drive', 'memory.?card', 'sd.?card',
+    'bag', 'carry.?case', 'case', 'lanyard', 'harness',
+  ];
   for (const item of items) {
     if (new RegExp(`\\b(new|replacement|need|broken|damaged|worn|torn)\\b.{0,30}${item}\\b`).test(t)) return true;
     if (new RegExp(`\\b${item}\\b.{0,25}\\b(broken|damaged|worn|torn|replacement|replace|needed)`).test(t)) return true;
