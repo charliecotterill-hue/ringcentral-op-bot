@@ -174,6 +174,26 @@ function isEquipmentRequestMessage(text) {
   return false;
 }
 
+// Log a completed equipment request to the Equipment Requests tab
+async function logEquipmentRequest(name, item, size, address, notes) {
+  if (!googleAuth || !SHEET_ID) return;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+    const now = new Date();
+    const date = now.toLocaleDateString('en-GB', { timeZone: 'Europe/London' });
+    const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: 'Equipment Requests!A:G',
+      valueInputOption: 'RAW',
+      resource: { values: [[date, time, name, item, size, address, notes]] },
+    });
+    console.log(`Equipment request logged: ${name} — ${item}`);
+  } catch (err) {
+    console.error('Failed to log equipment request:', err.message);
+  }
+}
+
 // Send a message to the equipment request Slack channel
 async function sendSlackEquipmentMessage(text) {
   if (!SLACK_EQUIPMENT_WEBHOOK_URL) {
@@ -868,6 +888,7 @@ app.post('/webhook', async (req, res) => {
             `*Notes:* ${notes}`,
           ].join('\n');
           await sendSlackEquipmentMessage(slackText);
+          await logEquipmentRequest(pending.name, pending.item, pending.size, pending.address, notes);
           await sendMessage(`✅ Equipment request submitted! We'll get that sorted for you, ${pending.name}.`, pending.webhookUrl);
 
         // --- YES/NO responses (duplicate_checkin, duplicate_checkout, or late_checkin) ---
