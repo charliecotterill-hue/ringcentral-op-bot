@@ -726,16 +726,18 @@ app.post('/slack-webhook', async (req, res) => {
       return res.status(200).send();
     }
 
-    // Extract site code (e.g. turner_nycfcstadium)
+    // Extract site code (e.g. cw_e3e4)
     const siteMatch = text.match(/complete for ([a-z0-9_]+)\./i);
-    // Extract dashboard row identifier number
+    // Extract actual batch number from "Batch NNNNN" (e.g. "S3 Batch 49030" → "49030")
+    const batchMatch = text.match(/\bBatch\s+(\d+)/i);
+    // Fallback: dashboard row identifier if no batch number found
     const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
 
-    if (siteMatch && rowMatch) {
+    if (siteMatch && (batchMatch || rowMatch)) {
       const fullCode = siteMatch[1].toLowerCase();
       // Use only the part after the underscore (e.g. cw_onenorthquay → onenorthquay)
       const slackSiteCode = fullCode.includes('_') ? fullCode.split('_').slice(1).join('_') : fullCode;
-      const batchNumber = rowMatch[1];
+      const batchNumber = batchMatch ? batchMatch[1] : rowMatch[1];
       console.log(`Upload complete — site code: ${slackSiteCode}, batch: ${batchNumber}`);
       await updatePSTUploadComplete(slackSiteCode, batchNumber);
     }
