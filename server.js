@@ -844,7 +844,9 @@ app.post('/webhook', async (req, res) => {
       text.trim().startsWith('What address') ||
       text.trim().startsWith('Any additional notes') ||
       text.trim().startsWith('No problem') ||
-      text.trim().startsWith('Would you like')
+      text.trim().startsWith('Would you like') ||
+      text.trim().startsWith('Are you making') ||
+      text.trim().startsWith('What equipment')
     )) {
       return res.status(200).send();
     }
@@ -864,8 +866,19 @@ app.post('/webhook', async (req, res) => {
           delete pendingConfirmations[creatorId];
         } else {
 
+        // --- Equipment request confirmation ---
+        if (pending.type === 'equipment_confirm') {
+          const reply = cleanText.toLowerCase().trim();
+          delete pendingConfirmations[creatorId];
+          if (reply === 'yes' || reply === 'y') {
+            pendingConfirmations[creatorId] = { type: 'equipment_item', name: pending.name, webhookUrl: pending.webhookUrl, timestamp: Date.now() };
+            await sendMessage(`What equipment do you need? Please describe the item (e.g. 'steel toe cap boots', 'battery pack').`, pending.webhookUrl);
+          } else {
+            await sendMessage(`No problem, cancelled.`, pending.webhookUrl);
+          }
+
         // --- Equipment request multi-step flow ---
-        if (pending.type === 'equipment_item') {
+        } else if (pending.type === 'equipment_item') {
           // Scanner has replied with the item they need
           const item = cleanText;
           delete pendingConfirmations[creatorId];
@@ -1042,10 +1055,10 @@ app.post('/webhook', async (req, res) => {
           await sendMessage(`Hi ${name}, you're scheduled at multiple sites today:\n${list}\nPlease reply with the number of the site you're leaving.`, webhookUrl);
         }
 
-      // --- Handle equipment requests ---
+      // --- Handle equipment requests — confirm first to avoid false positives ---
       } else if (isEquipmentRequestMessage(cleanText)) {
-        pendingConfirmations[creatorId] = { type: 'equipment_item', name, webhookUrl, timestamp: Date.now() };
-        await sendMessage(`Hi ${name}, I've picked up your equipment request. What equipment do you need? Please describe the item (e.g. 'steel toe cap boots', 'hi-vis vest').`, webhookUrl);
+        pendingConfirmations[creatorId] = { type: 'equipment_confirm', name, webhookUrl, timestamp: Date.now() };
+        await sendMessage(`Hi ${name}, are you making an equipment request? Reply YES to continue or NO to cancel.`, webhookUrl);
 
       }
     }
