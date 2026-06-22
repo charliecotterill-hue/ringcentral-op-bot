@@ -581,6 +581,29 @@ async function logArchiveCheckOut(name, site, timeOut, date) {
   }
 }
 
+// Check if scanner already has an open check-in (timeIn but no timeOut) for this site today
+async function checkOpenCheckIn(name, site, date) {
+  if (!googleAuth || !SHEET_ID) return null;
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: googleAuth });
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'Sheet1!A2:F1000',
+    });
+    const rows = result.data.values || [];
+    for (const row of rows) {
+      const [rowDate, rowTimeIn, rowName, rowSite, , rowTimeOut] = row;
+      if (rowDate === date && rowName === name && rowSite === site && rowTimeIn && !rowTimeOut) {
+        return { timeIn: rowTimeIn };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('Failed to check open check-in:', err.message);
+    return null;
+  }
+}
+
 // Check if scanner already has a completed visit (timeIn + timeOut) for this site today
 async function checkCompletedEntry(name, site, date) {
   if (!googleAuth || !SHEET_ID) return null;
@@ -1009,16 +1032,23 @@ app.post('/webhook', async (req, res) => {
         } else if (assignments.length === 1) {
           const { site, batch, rowNumber } = assignments[0];
 
-          // Check if scanner already has a completed visit for this site today
-          const completed = await checkCompletedEntry(name, site, date);
-          if (completed) {
+          // Check if scanner already has an open check-in (in but no out) for this site today
+          const open = await checkOpenCheckIn(name, site, date);
+          if (open) {
             pendingConfirmations[creatorId] = { type: 'duplicate_checkin', name, site, batch, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
-            await sendMessage(`Hi ${name}, it looks like you already completed a visit at ${site} today (checked in at ${completed.timeIn}, checked out at ${completed.timeOut}). Would you like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
+            await sendMessage(`Hi ${name}, it looks like you already checked in at ${site} today at ${open.timeIn} and haven't checked out yet. Would you still like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
           } else {
-            await logOnSite(name, site, batch, time, date);
-            await logArchiveCheckIn(name, site, time, date);
-            await tickCheckbox(rowNumber, 'L');
-            await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
+            // Check if scanner already has a completed visit (in + out) for this site today
+            const completed = await checkCompletedEntry(name, site, date);
+            if (completed) {
+              pendingConfirmations[creatorId] = { type: 'duplicate_checkin', name, site, batch, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
+              await sendMessage(`Hi ${name}, it looks like you already completed a visit at ${site} today (checked in at ${completed.timeIn}, checked out at ${completed.timeOut}). Would you like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
+            } else {
+              await logOnSite(name, site, batch, time, date);
+              await logArchiveCheckIn(name, site, time, date);
+              await tickCheckbox(rowNumber, 'L');
+              await sendMessage(`✅ Check-in recorded for ${name} at ${site}${batch ? ` (${batch})` : ''} at ${time}`, webhookUrl);
+            }
           }
         } else {
           // Multiple sites — ask which one
