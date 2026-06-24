@@ -224,9 +224,10 @@ async function sendSlackEquipmentMessage(text) {
 
 // Extract a HH:MM time string from a message (e.g. "10", "10:30", "9am", "10:30am")
 function extractMentionedTime(text) {
-  const t = text.toLowerCase();
+  // Strip "ish" suffix from times (e.g. "7:30ish" → "7:30", "8ish" → "8")
+  const t = text.toLowerCase().replace(/(\d)\s*ish\b/g, '$1');
   // HH:MM or H:MM optionally with am/pm
-  const colonMatch = t.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/);
+  const colonMatch = t.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?/);
   if (colonMatch) {
     let h = parseInt(colonMatch[1]);
     const m = parseInt(colonMatch[2]);
@@ -340,8 +341,10 @@ function isOffSiteMessage(text) {
   // leaving / leavin (typo)
   if (/\bleav(ing|in)\b/.test(t)) return true;
 
-  // finished — but not when followed by words suggesting mid-task context
-  if (/\bfinish(ed|ing)?\b/.test(t) && !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an|last|this|each|every|that)\b/.test(t)) return true;
+  // finished — but not when followed by context words, or in future/conditional tense
+  if (/\bfinish(ed|ing)?\b/.test(t) &&
+    !/\bfinish(ed|ing)?\s+(with|the|my|his|her|their|all|a|an|last|this|each|every|that|induction|training|up|early|work|shift)\b/.test(t) &&
+    !/\b(will|i'll|going to|about to|plan to|hoping to|should)\b.{0,25}\bfinish\b/.test(t)) return true;
 
   // heading off / heading out / headin off / headng out
   if (/\bheadin+g?\s+(off|out)\b/.test(t)) return true;
@@ -728,8 +731,8 @@ app.post('/slack-webhook', async (req, res) => {
 
     // Extract site code (e.g. cw_e3e4)
     const siteMatch = text.match(/complete for ([a-z0-9_]+)\./i);
-    // Extract actual batch number from "Batch NNNNN" (e.g. "S3 Batch 49030" → "49030")
-    const batchMatch = text.match(/\bBatch\s+(\d+)/i);
+    // Extract actual batch number from "Batch XXXXX" (e.g. "S3 Batch 134c0" → "134c0")
+    const batchMatch = text.match(/\bBatch\s+([a-z0-9]+)/i);
     // Fallback: dashboard row identifier if no batch number found
     const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
 
@@ -790,7 +793,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
         site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
-        batch && batch.toString().trim().includes(batchNumber)
+        batch && batch.toString().trim().toLowerCase().includes(batchNumber.toLowerCase())
       ) {
         matchRow = i + 5;
         break;
@@ -805,7 +808,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
         const batch = dashRows[i][5]; // Column H
         if (
           site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
-          batch && batch.toString().trim().includes(batchNumber)
+          batch && batch.toString().trim().toLowerCase().includes(batchNumber.toLowerCase())
         ) {
           matchRow = i + 5;
           console.log(`Fallback match found at row ${matchRow} without day filter`);
