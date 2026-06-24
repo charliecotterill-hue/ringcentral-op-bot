@@ -817,6 +817,24 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
       }
     }
 
+    // Third pass: match on site name only — use if there's exactly one row for this site (avoids ambiguity)
+    if (matchRow === -1) {
+      console.log(`No batch match found — trying site name only for ${pstSiteName}`);
+      const siteMatches = [];
+      for (let i = 0; i < dashRows.length; i++) {
+        const site = dashRows[i][3]; // Column F
+        if (site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim()) {
+          siteMatches.push(i + 5);
+        }
+      }
+      if (siteMatches.length === 1) {
+        matchRow = siteMatches[0];
+        console.log(`Site-only match found at row ${matchRow}`);
+      } else if (siteMatches.length > 1) {
+        console.log(`Multiple rows found for ${pstSiteName} — cannot safely match without batch`);
+      }
+    }
+
     if (matchRow === -1) {
       console.log(`No Scanning Dashboard row found for ${pstSiteName} batch ${batchNumber}`);
       return;
