@@ -37,6 +37,7 @@ const CHANNEL_SCANNERS = {
   '158565171206': '7454948044', // George
   '156654592006': '5058918044', // Rahat
   '159333703686': '4064968020', // Muhammad Umar
+  '158831591430': '7459043044', // Jon
 };
 
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -65,6 +66,7 @@ const SCANNER_NAMES = {
   '7454948044': 'George',
   '5058918044': 'Rahat',
   '4064968020': 'Muhammad Umar',
+  '7459043044': 'Jon',
 };
 
 // Map of channel ID → incoming webhook URL
@@ -93,6 +95,7 @@ const CHANNEL_WEBHOOKS = {
   '158565171206': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA3NTE4NzQ3In0.ASPAbCuxEVyxgm-Hc3BmFlPb27aiFWDMgonvOVmmsXY',
   '156654592006': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5MzcwMTM5In0.G5624hu_TZRKxpUOUuhcWk1AqG2Vg43EK8scng9zItg',
   '159333703686': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5Mzc4MzMxIn0.tohzWoE2jhvgyMBrIVme1JgzlYvPzUWWLeiEALFS5hA',
+  '158831591430': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODI1OTM0MzYzIn0.sheQeaAWhELUtk5lSDUN6X-weI_MkIWEJwh2R12c1mo',
 };
 
 // Set up Google Sheets authentication
@@ -591,7 +594,7 @@ async function checkOpenCheckIn(name, site, date) {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A2:F1000',
+      range: 'Daily Timings!A2:F1000',
     });
     const rows = result.data.values || [];
     for (const row of rows) {
@@ -614,7 +617,7 @@ async function checkCompletedEntry(name, site, date) {
     const sheets = google.sheets({ version: 'v4', auth: googleAuth });
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A2:F1000',
+      range: 'Daily Timings!A2:F1000',
     });
     const rows = result.data.values || [];
     for (const row of rows) {
@@ -642,20 +645,20 @@ async function logOnSite(name, site, batch, time, date) {
     // Check if it's a new day — if so, clear previous data
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A2',
+      range: 'Daily Timings!A2',
     });
     const firstDate = existing.data.values?.[0]?.[0];
     if (firstDate && firstDate !== date) {
       await sheets.spreadsheets.values.clear({
         spreadsheetId: SHEET_ID,
-        range: 'Sheet1!A2:Z1000',
+        range: 'Daily Timings!A2:Z1000',
       });
       console.log('New day detected — cleared previous entries');
     }
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A:E',
+      range: 'Daily Timings!A:E',
       valueInputOption: 'RAW',
       resource: { values: [[date, time, name, site || '', batch || '', '']] },
     });
@@ -676,7 +679,7 @@ async function logOffSite(name, site, time, date) {
 
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: 'Sheet1!A2:F1000',
+      range: 'Daily Timings!A2:F1000',
     });
 
     const rows = result.data.values || [];
@@ -698,7 +701,7 @@ async function logOffSite(name, site, time, date) {
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `Sheet1!F${matchRowIndex}`,
+      range: `Daily Timings!F${matchRowIndex}`,
       valueInputOption: 'RAW',
       resource: { values: [[time]] },
     });
