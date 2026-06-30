@@ -38,6 +38,7 @@ const CHANNEL_SCANNERS = {
   '156654592006': '5058918044', // Rahat
   '159333703686': '4064968020', // Muhammad Umar
   '158831591430': '7459043044', // Jon
+  '158889312262': '7461141044', // Gino
 };
 
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -67,6 +68,7 @@ const SCANNER_NAMES = {
   '5058918044': 'Rahat',
   '4064968020': 'Muhammad Umar',
   '7459043044': 'Jon',
+  '7461141044': 'Gino',
 };
 
 // Map of channel ID → incoming webhook URL
@@ -96,6 +98,7 @@ const CHANNEL_WEBHOOKS = {
   '156654592006': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5MzcwMTM5In0.G5624hu_TZRKxpUOUuhcWk1AqG2Vg43EK8scng9zItg',
   '159333703686': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5Mzc4MzMxIn0.tohzWoE2jhvgyMBrIVme1JgzlYvPzUWWLeiEALFS5hA',
   '158831591430': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODI1OTM0MzYzIn0.sheQeaAWhELUtk5lSDUN6X-weI_MkIWEJwh2R12c1mo',
+  '158889312262': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODI1OTQyNTU1In0.CQ-PtJiAQqi-sr1nhbI2KV8EO5jcNVrc7zrEb9A3C-E',
 };
 
 // Set up Google Sheets authentication
@@ -285,7 +288,10 @@ function isOnSiteMessage(text) {
   if (/\bon.?si(te?|ght)\b/.test(t) &&
     !/\b(when|once|until|will be|going to be|about to be|should be|if)\b.{0,20}on.?si(te?|ght)\b/.test(t) &&
     !/\b(not|no|never|wasn't|isn't|aren't|haven't|don't|doesn't|wont|won't|cant|can't)\b.{0,10}on.?si(te?|ght)\b/.test(t) &&
-    !/\bon.?si(te?|ght)\b.{0,10}\b(yet|today)\b/.test(t)) return true;
+    !/\bon.?si(te?|ght)\b.{0,10}\b(yet|today)\b/.test(t) &&
+    !/\b(different|shown|built|found|available|present|visible|located|existing|actual|current)\b.{0,20}\bon.?si(te?|ght)\b/.test(t) &&
+    !/\bon.?si(te?|ght)\b.{0,20}\b(and|but|as|that|which|where)\b.{0,20}\b(not|never|weren't|wasn't|aren't|don't|can't|weren't)\b/.test(t) &&
+    !/^(would|could|can |is it|are there|was |were |do you|does |did |have you|has |asking|just to|just wondering|wondering)\b/.test(t.trim())) return true;
 
   // at site / at the site
   if (/\bat\s+(the\s+)?site\b/.test(t)) return true;
