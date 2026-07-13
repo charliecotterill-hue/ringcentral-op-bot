@@ -740,17 +740,15 @@ app.post('/slack-webhook', async (req, res) => {
 
     // Extract site code (e.g. cw_e3e4)
     const siteMatch = text.match(/complete for ([a-z0-9_]+)\./i);
-    // Extract actual batch number from "Batch XXXXX" (e.g. "S3 Batch 134c0" → "134c0")
-    const batchMatch = text.match(/\bBatch\s+([a-z0-9]+)/i);
-    // Fallback: dashboard row identifier if no batch number found
+    // Extract dashboard row identifier — this is the Batch number in the PST (e.g. [Dashboard row identifier 7] → "Batch 7")
     const rowMatch = text.match(/\[Dashboard row identifier (\d+)\]/i);
 
-    if (siteMatch && (batchMatch || rowMatch)) {
+    if (siteMatch && rowMatch) {
       const fullCode = siteMatch[1].toLowerCase();
       // Use only the part after the underscore (e.g. cw_onenorthquay → onenorthquay)
       const slackSiteCode = fullCode.includes('_') ? fullCode.split('_').slice(1).join('_') : fullCode;
-      const batchNumber = batchMatch ? batchMatch[1] : rowMatch[1];
-      console.log(`Upload complete — site code: ${slackSiteCode}, batch: ${batchNumber}`);
+      const batchNumber = rowMatch[1]; // e.g. "7" → matches "Batch 7: Floor 46-48" in column H
+      console.log(`Upload complete — site code: ${slackSiteCode}, batch identifier: ${batchNumber}`);
       await updatePSTUploadComplete(slackSiteCode, batchNumber);
     }
   }
@@ -802,7 +800,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
       if (
         day && day.toLowerCase().trim() === dayOfWeek.toLowerCase() &&
         site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
-        batch && batch.toString().trim().toLowerCase().includes(batchNumber.toLowerCase())
+        batch && new RegExp(`\\bbatch\\s+${batchNumber}\\b`, 'i').test(batch.toString().trim())
       ) {
         matchRow = i + 5;
         break;
@@ -817,7 +815,7 @@ async function updatePSTUploadComplete(slackSiteCode, batchNumber) {
         const batch = dashRows[i][5]; // Column H
         if (
           site && site.toLowerCase().trim() === pstSiteName.toLowerCase().trim() &&
-          batch && batch.toString().trim().toLowerCase().includes(batchNumber.toLowerCase())
+          batch && new RegExp(`\\bbatch\\s+${batchNumber}\\b`, 'i').test(batch.toString().trim())
         ) {
           matchRow = i + 5;
           console.log(`Fallback match found at row ${matchRow} without day filter`);
