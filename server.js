@@ -344,6 +344,9 @@ function isOffSiteMessage(text) {
   // off site / offsite / off-site / off sight / off sit (common typos)
   if (/\boff.?si(te?|ght)\b/.test(t)) return true;
 
+  // "exiting the site" / "exiting site" — only when message is just this phrase, no other text
+  if (/^exiting\s+(the\s+)?site\.?$/.test(t)) return true;
+
   // clock out / clocking out / clocked out / clockout
   if (/\bcloc?k(ed|ing)?\s*out\b/.test(t)) return true;
 
