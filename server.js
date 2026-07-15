@@ -39,6 +39,8 @@ const CHANNEL_SCANNERS = {
   '159333703686': '4064968020', // Muhammad Umar
   '158831591430': '7459043044', // Jon
   '158889312262': '7461141044', // Gino
+  '163651903494': '7564880044', // Harrison
+  '163651895302': '7564877044', // Michael
 };
 
 // Map of RC user ID → first name (avoids needing RC_BOT_TOKEN for name lookups)
@@ -69,6 +71,8 @@ const SCANNER_NAMES = {
   '4064968020': 'Muhammad Umar',
   '7459043044': 'Jon',
   '7461141044': 'Gino',
+  '7564880044': 'Harrison',
+  '7564877044': 'Michael',
 };
 
 // Map of channel ID → incoming webhook URL
@@ -99,6 +103,8 @@ const CHANNEL_WEBHOOKS = {
   '159333703686': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODA5Mzc4MzMxIn0.tohzWoE2jhvgyMBrIVme1JgzlYvPzUWWLeiEALFS5hA',
   '158831591430': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODI1OTM0MzYzIn0.sheQeaAWhELUtk5lSDUN6X-weI_MkIWEJwh2R12c1mo',
   '158889312262': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODI1OTQyNTU1In0.CQ-PtJiAQqi-sr1nhbI2KV8EO5jcNVrc7zrEb9A3C-E',
+  '163651903494': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODU5NTcwNzE1In0.DGZc4K0d6yM7IAePqLh-FlFseMhA5SGFPKBtuvN7pnQ',
+  '163651895302': 'https://hooks.ringcentral.com/webhook/v2/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvdCI6ImMiLCJvaSI6IjIxNDcwNzgxNDQxIiwiaWQiOiIzODU5NTc4OTA3In0.R6qx2A59rlHxpGTrxA6mITFBx5HBKJByHD0lP4Hz0AE',
 };
 
 // Set up Google Sheets authentication
