@@ -883,6 +883,7 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).send();
   }
 
+  try {
   const event = req.body;
 
   if (event && event.body && event.body.text !== undefined) {
@@ -1070,6 +1071,7 @@ app.post('/webhook', async (req, res) => {
 
       // --- Handle on site messages ---
       } else if (isOnSiteMessage(cleanText)) {
+        console.log(`[ONSITE] Detected for ${name}`);
         const assignments = await getScannersAssignments(name);
 
         if (assignments.length === 0) {
@@ -1078,17 +1080,22 @@ app.post('/webhook', async (req, res) => {
           const { site, batch, rowNumber } = assignments[0];
 
           // Check if scanner already has an open check-in (in but no out) for this site today
+          console.log(`[ONSITE] Checking open check-in for ${name} at ${site}`);
           const open = await checkOpenCheckIn(name, site, date);
+          console.log(`[ONSITE] Open check-in result: ${open ? open.timeIn : 'none'}`);
           if (open) {
             pendingConfirmations[creatorId] = { type: 'duplicate_checkin', name, site, batch, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
             await sendMessage(`Hi ${name}, it looks like you already checked in at ${site} today at ${open.timeIn} and haven't checked out yet. Would you still like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
           } else {
             // Check if scanner already has a completed visit (in + out) for this site today
+            console.log(`[ONSITE] Checking completed entry for ${name} at ${site}`);
             const completed = await checkCompletedEntry(name, site, date);
+            console.log(`[ONSITE] Completed entry result: ${completed ? `in ${completed.timeIn} out ${completed.timeOut}` : 'none'}`);
             if (completed) {
               pendingConfirmations[creatorId] = { type: 'duplicate_checkin', name, site, batch, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
               await sendMessage(`Hi ${name}, it looks like you already completed a visit at ${site} today (checked in at ${completed.timeIn}, checked out at ${completed.timeOut}). Would you like to log another check-in? Reply YES to confirm or NO to cancel.`, webhookUrl);
             } else {
+              console.log(`[ONSITE] Logging fresh check-in for ${name}`);
               await logOnSite(name, site, batch, time, date);
               await logArchiveCheckIn(name, site, time, date);
               await tickCheckbox(rowNumber, 'L');
@@ -1105,6 +1112,7 @@ app.post('/webhook', async (req, res) => {
 
       // --- Handle off site messages ---
       } else if (isOffSiteMessage(cleanText)) {
+        console.log(`[OFFSITE] Detected for ${name}`);
         const assignments = await getScannersAssignments(name);
 
         if (assignments.length === 0) {
@@ -1113,11 +1121,14 @@ app.post('/webhook', async (req, res) => {
           const { site, rowNumber } = assignments[0];
 
           // Check if scanner has already checked out of this site today
+          console.log(`[OFFSITE] Checking completed entry for ${name} at ${site}`);
           const completed = await checkCompletedEntry(name, site, date);
+          console.log(`[OFFSITE] Completed entry result: ${completed ? `out ${completed.timeOut}` : 'none'}`);
           if (completed) {
             pendingConfirmations[creatorId] = { type: 'duplicate_checkout', name, site, rowNumber, time, date, webhookUrl, timestamp: Date.now() };
             await sendMessage(`Hi ${name}, it looks like you already checked out of ${site} today (checked out at ${completed.timeOut}). Would you like to log another check-out? Reply YES to confirm or NO to cancel.`, webhookUrl);
           } else {
+            console.log(`[OFFSITE] Logging check-out for ${name}`);
             await logOffSite(name, site, time, date);
             await logArchiveCheckOut(name, site, time, date);
             await tickCheckbox(rowNumber, 'M');
@@ -1140,6 +1151,10 @@ app.post('/webhook', async (req, res) => {
   }
 
   res.status(200).send();
+  } catch (err) {
+    console.error('Webhook handler error:', err.message, err.stack);
+    res.status(200).send(); // always acknowledge RC even on error
+  }
 });
 
 async function sendMessage(text, webhookUrl) {
